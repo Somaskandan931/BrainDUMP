@@ -1,15 +1,13 @@
-# Google Calendar Integration — Milestone 6
+# Google Calendar Integration
 
-Turns `GET/POST /api/calendar/*` from `501` into real sync endpoints.
-The integration is **opt-in**: the app runs fine unconfigured (every
-other milestone's features keep working) and degrades gracefully if
-`credentials.json` isn't present yet.
+Backs `GET/POST /api/calendar/*`. The integration is **opt-in**: the app
+runs fine unconfigured (every other feature keeps working) and degrades
+gracefully if `credentials.json` isn't present yet.
 
-> Todoist sync (originally also part of Milestone 6) was removed after
+> Todoist sync (originally part of this integration) was removed after
 > the external API changed and stopped being worth the maintenance cost.
 > Brain Dump now ships its own native task manager instead of relying on
-> a third-party task service — see the project roadmap for the native
-> task manager work that replaced it.
+> a third-party task service.
 
 ## One-time local setup
 
@@ -85,10 +83,3 @@ marking it `SYNCED`. Also ran the full app through `TestClient` and
 confirmed `GET /api/calendar/events` and `POST /api/calendar/sync` (424
 with no `credentials.json` present) behave as designed instead of the
 old blanket `501`.
-
-## Next milestone
-
-**Milestone 7 — Next.js frontend**: the dashboard, Brain Dump input,
-Projects/Calendar/Analytics pages, and the AI Chat surface. Calendar now
-has real data to show — `GET /api/calendar/events` and the sync
-endpoints above are what the Calendar page and a "Sync now" button call.

@@ -1,4 +1,4 @@
-# Database Schema — Milestone 2
+# Database Schema
 
 SQLite via SQLAlchemy 2.0 declarative models (`Mapped` / `mapped_column`).
 Engine, session factory, and `init_db()` live in `backend/database.py`.
@@ -43,13 +43,13 @@ All tables inherit `created_at` / `updated_at` (UTC, auto-managed) from
 - **`Subtask` is a separate table, not a self-referential `Task`.**
   Subtasks don't carry a priority score or energy requirement — they
   inherit urgency from the parent task, and keeping them a distinct,
-  simpler model matches how the AI Task Breakdown agent will emit them
-  (Milestone 4).
+  simpler model matches how the AI Task Breakdown agent emits them
+  (see `AGENTS.md`).
 - **`WorkSession` is the ML ground truth.** `predicted_duration_minutes`
   is set at scheduling time; `duration_minutes` is filled when the
-  session ends. `ml/estimator.py` (Milestone 8) trains directly on this
-  pair rather than on `Task.estimated_hours`/`actual_hours`, which are
-  denormalized convenience fields updated from sessions.
+  session ends. `ml/estimator.py` (see `ANALYTICS.md`) trains directly
+  on this pair rather than on `Task.estimated_hours`/`actual_hours`,
+  which are denormalized convenience fields updated from sessions.
 - **`CalendarEvent` serves two roles**: a local cache of pulled Google
   Calendar events (`source=GOOGLE`, for fast free/busy lookups) and
   scheduler-created work blocks pushed outward (`source=BRAIN_DUMP`,
@@ -60,19 +60,12 @@ All tables inherit `created_at` / `updated_at` (UTC, auto-managed) from
   encoder, while still being validated at the DB layer via
   SQLAlchemy's `Enum` type.
 - **No external task-service table.** A `Task.todoist_id` column was
-  added during Milestone 6 for Todoist reconciliation and later removed
-  when Todoist sync was dropped in favor of a native task manager.
+  added for Todoist reconciliation and later removed when Todoist sync
+  was dropped in favor of a native task manager.
 
 ## Verified
 
-Milestone 2 was validated by running `init_db()` against a throwaway
+This schema was validated by running `init_db()` against a throwaway
 SQLite file, inserting a `Project` → `Task` → `Subtask` → `WorkSession` →
 `Prediction` chain, and reading it back through the ORM relationships.
 All 8 tables and foreign keys came up as designed.
-
-## Next milestone
-
-**Milestone 3 — FastAPI backend with clean APIs**: wire `backend/app.py`
-to register the routers already stubbed in `backend/api/*`, add
-Pydantic schemas (request/response models) alongside these ORM models,
-and implement the CRUD endpoints in `api/tasks.py` against this schema.

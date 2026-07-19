@@ -1,4 +1,4 @@
-# Frontend — Milestone 7
+# Frontend
 
 Next.js 14 (App Router) + TypeScript + Tailwind. No shadcn/ui, despite
 the original tech-stack sketch — see "Design decisions" below.
@@ -15,7 +15,7 @@ Every page calls a real backend route from `backend/api/API.md` through
 | Projects | `/api/projects/*`, `/api/tasks/*` | Live |
 | Calendar | `/api/calendar/*` | Live |
 | AI Chat | `/api/planner/brain-dump`, `/replan`, `/next-task` | Live (see below) |
-| Analytics | `/api/analytics/*` | Real calls, correctly render "not built yet" — routes are 501 until Milestone 8 |
+| Analytics | `/api/analytics/*` | Live |
 | Settings | none (static docs + `NEXT_PUBLIC_API_URL`) | N/A |
 
 ## Design decisions
@@ -32,7 +32,7 @@ Every page calls a real backend route from `backend/api/API.md` through
   in the backend yet). Rather than invent a plausible-looking number,
   the dashboard's gauge shows **Due Today progress** — completed vs.
   total tasks due today, computed client-side from real `/api/tasks/`
-  data. If Milestone 8 adds a real energy/focus model, this is where it
+  data. If a real energy/focus model is added later, this is where it
   plugs in.
 - **AI Chat isn't a chatbot.** There's no `/api/chat` route — the AI
   layer is a pipeline of single-purpose agents
@@ -42,15 +42,15 @@ Every page calls a real backend route from `backend/api/API.md` through
   through the brain-dump agent, and the two quick-action buttons call
   `/api/planner/replan` and `/api/planner/next-task` directly. It says
   what it's doing ("Working…"), never "thinking…".
-- **Analytics calls the real 501s.** `analyticsApi.*` in `services/api.ts`
-  hits the actual `/api/analytics/*` routes rather than being stubbed
-  out client-side. Each panel catches `ApiError` with `status === 501`
-  and renders an explicit "not built yet" state naming Milestone 8 —
-  so the page needs zero code changes the moment that milestone lands.
-- **App Router, not the `pages/` folder** sketched in Milestone 1's
-  `ARCHITECTURE.md`. That folder predates the App Router becoming
-  Next.js's default; `app/` replaces it. `styles/` was similarly folded
-  into `app/globals.css` + Tailwind rather than kept as a separate tree.
+- **Analytics calls the real routes.** `analyticsApi.*` in
+  `services/api.ts` hits the actual `/api/analytics/*` routes rather
+  than being stubbed out client-side. Each panel is written to catch an
+  `ApiError` with `status === 501` and render an explicit "not built
+  yet" state — a defensive path that's no longer exercised now that the
+  backend returns real data, but costs nothing to leave in place.
+- **App Router, not a `pages/` folder.** `app/` is Next.js's current
+  default; `styles/` was similarly folded into `app/globals.css` +
+  Tailwind rather than kept as a separate tree.
 - **SWR over a custom fetch-and-`useState` pattern.** Every list (tasks,
   projects, next-task, calendar events) needs revalidation after a
   mutation (complete a task, sync calendar) and periodic refresh (next
@@ -77,13 +77,8 @@ Grotesk / Inter / IBM Plex Mono via `next/font/google` — need network
 access at build time; verified separately with the fonts stubbed out
 locally, then restored.)
 
-## Next milestone
-
-**Milestone 8 — Analytics and ML components**: implement
-`backend/models/metrics.py` aggregation and turn `/api/analytics/*`
-from `501` into real endpoints. `app/analytics/page.tsx` already calls
-all four routes and needs no changes — its `AnalyticsPanel` component
-will start rendering real JSON the moment the backend responds with
-`200` instead of `501`. Once the response shapes are finalized there,
-it's worth swapping the raw `JSON.stringify` fallback for real charts
+With the analytics backend now live, `app/analytics/page.tsx` needed
+zero changes — it was already calling the real routes and rendering
+whatever came back. Once real response shapes stabilize further, it's
+worth swapping the raw `JSON.stringify` fallback for real charts
 (recharts is already a dependency, unused until then).

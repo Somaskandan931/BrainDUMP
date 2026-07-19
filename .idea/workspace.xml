@@ -4,7 +4,27 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="" />
+    <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/ANALYTICS.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/ANALYTICS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/ai/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/ai/AGENTS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/API.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/API.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/integrations/INTEGRATIONS.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/integrations/INTEGRATIONS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/models/SCHEMA.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/models/SCHEMA.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/services/PLANNING.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/PLANNING.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brain-dump-API.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brain-dump-SCHEMA.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brain-dump-agents.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/ARCHITECTURE.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/FRONTEND.md" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/FRONTEND.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/brain-dump-API.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/brain-dump-SCHEMA.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/brain-dump-agents.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/tests/.gitkeep" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/tests/manual_milestone6_check.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/tests/manual_milestone8_check.py" beforeDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

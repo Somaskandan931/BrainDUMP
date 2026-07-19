@@ -1,9 +1,9 @@
-# Analytics and ML Components — Milestone 8
+# Analytics and ML Components
 
 Implements the read side of the "Learning Model" and "Weekly AI Review"
-from the product vision. Turns all four `/api/analytics/*` routes from
-`501` into real endpoints, and gives `ml/estimator.py` a learned second
-tier on top of its Milestone 5 group-median baseline.
+from the product vision. All four `/api/analytics/*` routes are real
+endpoints, and `ml/estimator.py` has a learned second tier on top of
+its group-median baseline (see `backend/services/PLANNING.md`).
 
 ## What's live
 
@@ -15,7 +15,7 @@ tier on top of its Milestone 5 group-median baseline.
     into tasks completed/planned, hours worked, most/least productive
     day, most-underestimated category (via `estimation_error()`),
     missed deadlines, and per-project progress. Ends with a one-sentence
-    recommendation from the new **Weekly Review / Reflection Agent**
+    recommendation from the **Weekly Review / Reflection Agent**
     (`ai/prompts.py::WEEKLY_REVIEW_SYSTEM`) — explains numbers that were
     already computed in Python, doesn't compute them itself. Falls back
     to a rule-based sentence (`_rule_based_recommendation()`) if Ollama
@@ -41,20 +41,20 @@ tier on top of its Milestone 5 group-median baseline.
   persisting a model with nothing to learn from.
 - **`backend/ml/estimator.py`** — `estimate_hours()` gains a third rung:
   project-specific median (still the best signal when it exists) →
-  **trained model** (new) → same-importance-tier median (any project) →
+  **trained model** → same-importance-tier median (any project) →
   flat default. The trained model is loaded lazily and reloaded
   automatically if `estimator.pkl`'s mtime changes; a missing or corrupt
   file just skips that rung.
 - **`backend/scheduler/nightly.py`** — two fixes/additions:
   - `tasks_planned` (and therefore `completion_rate`) on today's
-    `ProductivityMetric` was always `None`/`0` through Milestone 7 —
-    nothing populated it. Now computed from a real distinct count of
-    tasks with a Brain-Dump-scheduled `CalendarEvent` today.
+    `ProductivityMetric` was previously always `None`/`0` — nothing
+    populated it. Now computed from a real distinct count of tasks with
+    a Brain-Dump-scheduled `CalendarEvent` today.
   - On Sundays, calls `ml.trainer.train_estimator()` — the one part of
-    this milestone expensive enough to not redo per-request. Wrapped in
-    a broad `except Exception` so an ML failure (missing optional dep,
-    corrupt `models/` dir) degrades this one step, not the rest of the
-    nightly job (replan, calendar sync).
+    this expensive enough to not redo per-request. Wrapped in a broad
+    `except Exception` so an ML failure (missing optional dep, corrupt
+    `models/` dir) degrades this one step, not the rest of the nightly
+    job (replan, calendar sync).
 - **`backend/api/analytics.py`** / **`schemas/analytics.py`** — thin
   routing layer; all real logic lives in the service module above, same
   pattern as every other API module in this repo.
@@ -75,7 +75,7 @@ tier on top of its Milestone 5 group-median baseline.
   them, and keeps the failure mode (Ollama down) a missing sentence, not
   wrong statistics.
 - **Priority engine stays hand-tuned, on purpose.** `ml/priority_model.py`
-  was NOT given a learned counterpart this milestone even though its own
+  wasn't given a learned counterpart here, even though its own
   docstring flagged that as the eventual plan. Re-weighting its five
   components would need labeled "what did the user actually work on
   next, and why" data broken down *per component* — the schema today
@@ -83,9 +83,9 @@ tier on top of its Milestone 5 group-median baseline.
   (`Task.priority_score` / `Prediction.predicted_priority_score`), not
   the five inputs that produced it. Learning better weights from a
   composite score alone isn't a real fit; storing the component
-  breakdown is a schema change, not something to smuggle into an
-  analytics milestone as a half-measure. Documented as real future scope
-  in `ml/trainer.py`'s module docstring instead.
+  breakdown is a schema change, not something to smuggle in as a
+  half-measure. Documented as real future scope in `ml/trainer.py`'s
+  module docstring instead.
 - **Estimator training is scheduled, not on-demand.** `train_estimator()`
   is only ever called from the Sunday nightly job (or manually via
   `python -m backend.ml.trainer`) — never from a request path. Task
@@ -96,39 +96,29 @@ tier on top of its Milestone 5 group-median baseline.
   `estimation_error()`'s `_category_display_name()` has to sniff whether
   `category` is a stringified project id (`"7"`) or an importance label
   (`"high"`) because that's how `ml/estimator.py::ensure_estimate()`
-  already writes it (Milestone 5) — not something this milestone
-  introduced, but worth flagging as a pattern a real schema (e.g. a
-  nullable `project_id` FK plus a separate `importance_fallback` column)
-  would avoid. Left as-is rather than migrating a live column for a
-  cosmetic improvement.
+  already writes it — not a pattern introduced here, but worth flagging
+  as something a real schema (e.g. a nullable `project_id` FK plus a
+  separate `importance_fallback` column) would avoid. Left as-is rather
+  than migrating a live column for a cosmetic improvement.
 
 ## Verified
 
-`tests/manual_milestone8_check.py` seeds 25 resolved `Prediction` rows
-(consistently ~30% underestimated) plus two days of `ProductivityMetric`
-and a `WorkSession`, then: trains the estimator and confirms it persists
-and reports the right sample count; confirms `estimate_hours()` on a
-fresh task actually uses the newly trained model; confirms
-`weekly_review()` picks up the underestimation bias and produces an
-AI-generated recommendation (Ollama call monkeypatched, same pattern as
-`manual_milestone6_check.py`'s Google Calendar mocks); confirms
-`estimation_error()` correctly resolves the numeric category back to the
-project name and labels it `"underestimates"`; confirms `streaks()` and
-`productivity_hours()` read back exactly what was seeded; and confirms
-`weekly_review()` falls back to a non-empty, `ai_generated: false`
-recommendation when the Ollama call raises `OllamaError`.
+A manual check script seeds 25 resolved `Prediction` rows (consistently
+~30% underestimated) plus two days of `ProductivityMetric` and a
+`WorkSession`, then: trains the estimator and confirms it persists and
+reports the right sample count; confirms `estimate_hours()` on a fresh
+task actually uses the newly trained model; confirms `weekly_review()`
+picks up the underestimation bias and produces an AI-generated
+recommendation (Ollama call monkeypatched, same pattern used for the
+Google Calendar mocks); confirms `estimation_error()` correctly resolves
+the numeric category back to the project name and labels it
+`"underestimates"`; confirms `streaks()` and `productivity_hours()` read
+back exactly what was seeded; and confirms `weekly_review()` falls back
+to a non-empty, `ai_generated: false` recommendation when the Ollama
+call raises `OllamaError`.
 
 Only static `py_compile` syntax checks were run in the environment this
-milestone was authored in (no network access to install the dependency
-stack — fastapi/sqlalchemy/scikit-learn weren't available). Run
-`python -m tests.manual_milestone8_check` from `ai_os/` in a real
-environment before trusting this milestone the way Milestones 1-7 were
-verified.
-
-## Next milestone
-
-**Milestone 9 — Testing and Docker**: turn `tests/manual_milestone6_check.py`
-and `tests/manual_milestone8_check.py` into a real `pytest` suite (plus
-coverage for Milestones 1-5, 7 that never got a dedicated script), and
-add a `docker-compose.yml` that brings up the backend, frontend, and
-Ollama together for one-command local setup.
+was authored in (no network access to install the dependency stack —
+fastapi/sqlalchemy/scikit-learn weren't available). Run the manual check
+script from `ai_os/` in a real environment before trusting this the way
+earlier backend work was verified.

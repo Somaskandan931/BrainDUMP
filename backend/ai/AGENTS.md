@@ -1,4 +1,4 @@
-# AI Agents — Milestone 4 design notes
+# AI Agents — design notes
 
 ## What's real vs. what's still a stub
 
@@ -7,7 +7,7 @@
 | `ai/ollama_client.py` | Real — transport layer, JSON-mode, retries |
 | `ai/prompts.py` | Real — Task Parser + Goal Breakdown prompts |
 | `services/task_parser.py` | Real — backs `POST /api/planner/brain-dump` |
-| `services/planner_service.py` | Real (Goal Engine slice only) — backs `POST /api/planner/goal` |
+| `services/planner_service.py` | Real (Goal Engine slice) — backs `POST /api/planner/goal` |
 | `ai/memory.py` | Still a stub |
 | `ai/embeddings.py` | Still a stub |
 
@@ -15,7 +15,8 @@
 
 `ai/prompts.py`'s original docstring listed eight agents (Task Parser,
 Task Breakdown, Deadline Generator, Scheduler, Priority Engine, Weekly
-Review, Daily Planner, Reflection Agent). Milestone 4 builds two:
+Review, Daily Planner, Reflection Agent). Two are LLM-backed agents in
+this layer:
 
 - **Task Parser** — `POST /api/planner/brain-dump`. Free text in,
   `{"tasks": [...]}` out.
@@ -23,14 +24,14 @@ Review, Daily Planner, Reflection Agent). Milestone 4 builds two:
   — `POST /api/planner/goal`. One goal in, a Project + ordered Task
   roadmap out.
 
-Scheduler and Priority Engine are Milestone 5, and per the ai/ vs ml/
-split explained in the main `ARCHITECTURE.md`, they'll likely be
-classical models in `backend/ml/*` rather than LLM calls — priority and
-scheduling need to be fast, deterministic, and retrainable on the
-user's own `WorkSession`/`Prediction` history, which an LLM call isn't
-well suited for. Weekly Review, Daily Planner, and Reflection Agent are
-Milestone 8 (analytics and ML components), once there's enough
-`productivity_metrics` history for them to say something useful.
+Scheduler and Priority Engine are classical models in `backend/ml/*`
+rather than LLM calls (see the `ai/` vs `ml/` split in the main
+`ARCHITECTURE.md`) — priority and scheduling need to be fast,
+deterministic, and retrainable on the user's own
+`WorkSession`/`Prediction` history, which an LLM call isn't well suited
+for. Weekly Review / Reflection Agent lives with the analytics layer
+(see `ANALYTICS.md`), once there's enough `productivity_metrics`
+history for it to say something useful.
 
 ## Deadline Generator was folded into Task Parser, not built separately
 
@@ -47,14 +48,14 @@ schema change would be additive, not breaking.
 
 ## Why `ai/memory.py` and `ai/embeddings.py` are still stubs
 
-Both were listed as Milestone 4 responsibilities in the original
-per-file docstrings, but neither is required for brain-dump or goal
-parsing to work correctly at the scale this system runs at (a personal,
-single-user planner, not a multi-session support bot):
+Both were originally scoped as part of this feature set, but neither is
+required for brain-dump or goal parsing to work correctly at the scale
+this system runs at (a personal, single-user planner, not a
+multi-session support bot):
 
 - `ai/memory.py` (short-term session context) matters once brain dumps
   routinely reference earlier ones ("also finish Question 3" needs to
-  know which assignment that is). Milestone 4's Task Parser only
+  know which assignment that is). The current Task Parser only
   resolves what's inside the current text.
 - `ai/embeddings.py` (FAISS semantic search) matters once there are
   enough tasks/projects that exact-name project matching in
@@ -63,8 +64,8 @@ single-user planner, not a multi-session support bot):
   enough for now.
 
 Both stay as documented, unimplemented stubs rather than being deleted
-or half-built, so a later milestone has an obvious, already-scoped
-place to land.
+or half-built, so there's an obvious, already-scoped place for them to
+land later.
 
 ## Error handling: two distinct failure modes, two status codes
 
@@ -112,7 +113,7 @@ running through `TestClient(app)`:
 - both empty-result and Ollama-transport-failure error paths, and that
   they map to the correct HTTP status codes (`422` vs `502`) through
   the real FastAPI routes
-- no regression on Milestone 3's existing CRUD routes
+- no regression on the existing CRUD routes
 
 When you have Ollama running locally, the one thing worth manually
 sanity-checking that these tests can't cover: does `qwen3:8b` (or

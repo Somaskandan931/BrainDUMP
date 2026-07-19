@@ -1,9 +1,8 @@
-# Scheduler and Planning Engine — Milestone 5
+# Scheduler and Planning Engine
 
 Implements the back half of the planning pipeline: Time Estimation, Priority
-Calculation, Schedule Optimization, and dynamic replanning. Turns
-`GET /api/planner/next-task` and `POST /api/planner/replan` from `501` into
-real, working endpoints.
+Calculation, Schedule Optimization, and dynamic replanning, backing
+`GET /api/planner/next-task` and `POST /api/planner/replan`.
 
 ## What's live
 
@@ -31,9 +30,8 @@ real, working endpoints.
   and by `replan()`; `get_next_task()` scores every active task fresh
   against right now and returns the single highest-priority one;
   `complete_task()` is the multi-step "mark done -> derive actual_hours
-  from sessions -> resolve the pending Prediction" flow that used to be
-  inline in `api/tasks.py` — moved here per the note left in that file
-  during Milestone 3.
+  from sessions -> resolve the pending Prediction" flow, moved here from
+  `api/tasks.py` to keep routes thin.
 - **`backend/services/deadline_service.py`** — `detect_at_risk_tasks()`
   checks whether a task's remaining estimated hours can actually fit in the
   free calendar time between now and its deadline. `replan()` is the full
@@ -42,14 +40,14 @@ real, working endpoints.
   rather than quietly rescheduled), wipe the future schedule, and repack
   everything tightest-first by priority.
 - **`backend/scheduler/morning.py`** / **`nightly.py`** — real APScheduler
-  job bodies now, registered in `app.py`'s `lifespan` at
+  job bodies, registered in `app.py`'s `lifespan` at
   `config.MORNING_JOB_HOUR` / `config.NIGHTLY_JOB_HOUR`. Morning schedules
   pending tasks and computes the day's "Do Next" recommendation; nightly
   rolls up today's `ProductivityMetric` and runs a full `replan()`. Both
-  write their summary to the `settings` table (no dashboard API exists yet
-  to push it to — Milestone 7/8 reads it from there) and both are also
-  runnable directly (`python -m backend.scheduler.morning`) for manual
-  testing without waiting for the cron trigger.
+  write their summary to the `settings` table (the frontend dashboard reads
+  it from there) and both are also runnable directly
+  (`python -m backend.scheduler.morning`) for manual testing without
+  waiting for the cron trigger.
 - **`api/planner.py`** — `GET /next-task` returns `{"task": null}` rather
   than a 404 when nothing's active (an empty queue is a valid state, not an
   error). `POST /replan` returns a `ReplanResponse` summarizing what
@@ -60,13 +58,13 @@ real, working endpoints.
 
 ## Design decisions
 
-- **No real Google Calendar yet, and the scheduler doesn't need one to
-  work.** `CalendarEvent` rows created here (`source=BRAIN_DUMP`) already
-  double as the local calendar per the model's own docstring from
-  Milestone 2. `generate_free_slots()` carves around whatever's in that
-  table regardless of where it came from — so Milestone 6 wiring in real
-  Google events later is a matter of that table gaining rows with
-  `source=GOOGLE`, not a change to this module.
+- **No real Google Calendar dependency — the scheduler doesn't need one
+  to work.** `CalendarEvent` rows created here (`source=BRAIN_DUMP`)
+  already double as the local calendar per the model's own docstring.
+  `generate_free_slots()` carves around whatever's in that table
+  regardless of where it came from — so wiring in real Google events
+  later (see `INTEGRATIONS.md`) is a matter of that table gaining rows
+  with `source=GOOGLE`, not a change to this module.
 - **Estimator is statistical (group median), not a trained model.**
   `ml/estimator.py`'s docstring is explicit about why: a learned regressor
   needs a minimum viable training set this app doesn't have on day one, and
@@ -74,7 +72,8 @@ real, working endpoints.
   fallback-ladder can. `confidence_score` reflects how far down that ladder
   the estimate had to go — this is exactly the same reasoning `ARCHITECTURE.md`
   and `ml/priority_model.py`'s docstring already gave for keeping the
-  priority engine a hand-tuned weighted sum until Milestone 8.
+  priority engine a hand-tuned weighted sum (see `ANALYTICS.md` for why a
+  learned version still isn't a good fit).
 - **`priority_score` is deliberately recomputed on every `next-task` call,
   not read from the last `schedule_pending_tasks()` batch.** A batch score
   goes stale the moment time passes (deadline risk shifts) or a task
@@ -88,7 +87,7 @@ real, working endpoints.
   pushed automatically. HIGH/CRITICAL tasks that are still at-risk after a
   full repack stay at-risk in the response on purpose — silently moving a
   critical deadline is exactly the kind of thing `notification_service.py`
-  (later milestone) needs to surface to the user, not something this layer
+  (not yet built) needs to surface to the user, not something this layer
   should paper over.
 - **`complete_task()` derives `actual_hours` from `WorkSession.duration_minutes`
   only if the user didn't set it by hand**, and only sums sessions that
@@ -96,7 +95,8 @@ real, working endpoints.
   not just scheduled). A task with only *scheduled* (never started) sessions
   correctly ends up with `actual_hours = None` — there's no real timer data
   yet, and inventing an estimate-as-actual would poison the training set
-  `Prediction` rows are collecting for Milestone 8.
+  `Prediction` rows are collecting for future estimator training (see
+  `ANALYTICS.md`).
 - **SQLite naive/aware datetime round-tripping.** `DateTime(timezone=True)`
   columns don't survive SQLite's string storage with their tzinfo intact —
   every value read back is naive. `scheduler_service._as_utc()` normalizes
@@ -119,13 +119,3 @@ correctly moved on to the next-highest-priority one. Separately verified
 `detect_at_risk_tasks()` flags an unrealistic task (20 estimated hours, due
 in an hour) as at-risk and — because it's HIGH importance — correctly does
 *not* auto-demote it, leaving it in `at_risk_tasks` in the response.
-
-## Next milestone
-
-**Milestone 6 — Google Calendar integration**: implement
-`backend/integrations/google_calendar.py` (OAuth flow, `get_free_busy()`,
-`create_event()`), and turn `api/calendar.py`
-from `501` into real sync endpoints. `scheduler_service.generate_free_slots()`
-already reads busy time from the local `CalendarEvent` table, so the main
-work is populating that table from the real Google Calendar API (source=
-`GOOGLE`) instead of changing how the scheduler consumes it.
