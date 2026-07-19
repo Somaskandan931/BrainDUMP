@@ -6,6 +6,7 @@ on this).
 
 from backend.models.project import Project
 from backend.models.task import Task, Subtask
+from backend.models.dependency import Dependency
 from backend.models.session import WorkSession
 from backend.models.calendar_event import CalendarEvent
 from backend.models.prediction import Prediction
@@ -16,6 +17,7 @@ __all__ = [
     "Project",
     "Task",
     "Subtask",
+    "Dependency",
     "WorkSession",
     "CalendarEvent",
     "Prediction",

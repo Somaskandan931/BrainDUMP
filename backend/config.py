@@ -74,6 +74,16 @@ WORK_DAY_END_HOUR = 21
 # into free slots.
 SCHEDULING_HORIZON_DAYS = 7
 
+# --- Scheduler Rules 3/4/6 (PRD §20 "Scheduling Rules" / §65) ---------------
+# Lunch is carved out of every working day the same way a meeting would be
+# (Rule 3: "Protect lunch"), and a break is inserted once a contiguous run
+# of packed work reaches BREAK_AFTER_MINUTES (Rule 4/6: "Protect breaks" /
+# "Insert 15-minute break after 90 minutes").
+LUNCH_START_HOUR = 13
+LUNCH_END_HOUR = 14
+BREAK_AFTER_MINUTES = 90
+BREAK_DURATION_MINUTES = 15
+
 # Smallest block worth scheduling. Tasks (or remaining slot fragments)
 # shorter than this are skipped rather than creating a 4-minute session.
 MIN_SLOT_MINUTES = 15

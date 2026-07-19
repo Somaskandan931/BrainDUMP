@@ -40,7 +40,7 @@ from backend.models.metrics import ProductivityMetric
 from backend.models.enums import EventSource, TaskStatus
 from backend.models.task import Task
 from backend.models.settings import Setting
-from backend.services import calendar_sync_service, deadline_service
+from backend.services import calendar_sync_service, deadline_service, notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,7 @@ def run_nightly_job() -> dict:
             "at_risk_count": len(replan_result["at_risk_tasks"]),
             "calendar_sync": calendar_sync_result,
             "ml_retrain": ml_retrain_result,
+            "notifications": notification_service.generate_notifications(db, now),
         }
 
         setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()

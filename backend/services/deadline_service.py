@@ -228,6 +228,37 @@ def compute_deadline_plan(db: Session, task: Task, now: datetime | None = None) 
     }
 
 
+def persist_deadline_plan(db: Session, task: Task, plan: Optional[dict] = None) -> Task:
+    """
+    Compute (if not already given) and persist the Deadline Engine's
+    outputs onto the task row itself: recommended_deadline (the
+    "default"-buffer target), latest_safe_start (target minus the hours
+    of work remaining), risk_score, and completion_probability. Without
+    this, PRD §72's Deadline Engine acceptance criteria ("risk score is
+    shown", "a realistic completion time is generated") had nothing to
+    read from besides recomputing compute_deadline_plan() ad hoc — the
+    values never survived past a single request/response.
+    """
+    if task.deadline is None:
+        return task
+
+    plan = plan or compute_deadline_plan(db, task)
+    default_buffer = next((b for b in plan["buffers"] if b["level"] == "default"), None)
+    if default_buffer is None:
+        return task
+
+    target = default_buffer["target_date"]
+    hours_needed = default_buffer["hours_needed"]
+    task.recommended_deadline = target
+    task.latest_safe_start = target - timedelta(hours=hours_needed) if hours_needed else target
+
+    status_to_risk = {"safe": 0.15, "tight": 0.55, "impossible": 0.9, "done": 0.0}
+    task.risk_score = status_to_risk.get(default_buffer["status"], 0.5)
+    task.completion_probability = round(1.0 - task.risk_score, 2)
+
+    return task
+
+
 def replan(db: Session) -> dict:
     """
     Full replan pass, triggered by POST /api/planner/replan (a missed
@@ -257,6 +288,10 @@ def replan(db: Session) -> dict:
 
     rescheduled = compress_schedule(db, now)
     at_risk_after = detect_at_risk_tasks(db, now)
+
+    for task in _active_tasks_with_deadline(db):
+        persist_deadline_plan(db, task)
+    db.commit()
 
     return {
         "rescheduled_count": len(rescheduled),

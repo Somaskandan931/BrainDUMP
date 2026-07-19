@@ -107,19 +107,24 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     return task
 
 
-@router.delete("/subtasks/{subtask_id}", status_code=status.HTTP_200_OK)
-def delete_subtask(subtask_id: int, db: Session = Depends(get_db)):
-    subtask = db.get(Subtask, subtask_id)
-    if subtask is None:
-        raise HTTPException(status_code=404, detail="Subtask not found")
+@router.delete("/{task_id}", response_model=TaskRead)
+def archive_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+    """
+    Soft delete: per PRD §33/§63 ("DELETE /api/tasks/{id} — Archive
+    task" / "Soft delete"), this must not hard-delete the row — history,
+    predictions, and sessions tied to it (used by analytics and the ML
+    trainer) need to survive. Marks the task ARCHIVED instead; archived
+    tasks are excluded from the active-task queries the scheduler and
+    "Do Next" already filter on.
+    """
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
 
-    db.delete(subtask)
+    task.status = TaskStatus.ARCHIVED
     db.commit()
-
-    return {
-        "success": True,
-        "message": "Subtask deleted successfully"
-    }
+    db.refresh(task)
+    return task
 
 
 @router.post("/{task_id}/complete", response_model=TaskRead)
@@ -143,7 +148,10 @@ def get_deadline_plan(task_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Task not found")
     if task.deadline is None:
         raise HTTPException(status_code=400, detail="Task has no deadline to plan against")
-    return deadline_service.compute_deadline_plan(db, task)
+    plan = deadline_service.compute_deadline_plan(db, task)
+    deadline_service.persist_deadline_plan(db, task, plan)
+    db.commit()
+    return plan
 
 
 # --- Subtask CRUD (nested under a task) ---------------------------------
@@ -180,18 +188,3 @@ def update_subtask(subtask_id: int, payload: SubtaskUpdate, db: Session = Depend
     db.commit()
     db.refresh(subtask)
     return subtask
-
-
-@router.delete("/subtasks/{subtask_id}", status_code=status.HTTP_200_OK)
-def delete_subtask(subtask_id: int, db: Session = Depends(get_db)):
-    subtask = db.get(Subtask, subtask_id)
-    if subtask is None:
-        raise HTTPException(status_code=404, detail="Subtask not found")
-
-    db.delete(subtask)
-    db.commit()
-
-    return {
-        "success": True,
-        "message": "Subtask deleted successfully"
-    }

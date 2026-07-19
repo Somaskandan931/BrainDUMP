@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from backend.database import SessionLocal
 from backend.integrations.google_calendar import GoogleCalendarError
 from backend.models.settings import Setting
-from backend.services import calendar_sync_service, scheduler_service
+from backend.services import calendar_sync_service, notification_service, scheduler_service
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,7 @@ def run_morning_job() -> dict:
             "next_task_title": next_task.title if next_task else None,
             "calendar_sync": calendar_result,
             "calendar_sessions_pushed": calendar_push[0],
+            "notifications": notification_service.generate_notifications(db),
         }
 
         setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()

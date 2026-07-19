@@ -89,6 +89,18 @@ def compute_context_switch_cost(task: Task, previous_task: Optional[Task]) -> fl
     return config.CONTEXT_SWITCH_DIFFERENT_PROJECT_COST
 
 
+def energy_fit_at_hour(task: Task, at_hour: int, energy_pattern: Optional[dict[int, str]] = None) -> float:
+    """
+    Public wrapper around the energy-fit heuristic so callers outside
+    this module (scheduler_service, choosing *which* slot to pack a task
+    into) can reuse the exact same fit scoring that priority_score
+    already uses — instead of only ever affecting task *ordering*, it
+    can now also affect *slot choice* (Scheduler Rule 5: "deep work
+    during peak hours" / Rule 6: "shallow work after meetings").
+    """
+    return _energy_fit(task, at_hour, energy_pattern or config.DEFAULT_ENERGY_PATTERN)
+
+
 def _energy_fit(task: Task, at_hour: int, energy_pattern: dict[int, str]) -> float:
     """
     How well a task's energy_requirement matches the energy the user

@@ -58,6 +58,18 @@ class Task(Base, TimestampMixin):
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # --- Deadline Engine outputs (PRD §19/§31/§62) ---------------------------
+    # Persisted copies of the Deadline Engine's "default" buffer target, its
+    # latest-safe-start, and its risk/completion figures — previously these
+    # were only ever computed on the fly in deadline_service and thrown away,
+    # so nothing else (list views, notifications, analytics) could read them
+    # without recomputing. deadline_service.persist_deadline_plan() fills
+    # these in.
+    recommended_deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_safe_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0 (safe) - 1.0 (at risk)
+    completion_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0-1.0
+
     # --- AI/ML-populated fields -------------------------------------------------
     estimated_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     actual_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

@@ -33,6 +33,7 @@ class TaskStatus(str, enum.Enum):
     BLOCKED = "blocked"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    ARCHIVED = "archived"  # soft-delete target for DELETE /api/tasks/{id} (PRD §33/§63)
 
 
 class Importance(str, enum.Enum):
