@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/BrainDUMP.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/ARCHITECTURE.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ai/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ai/embeddings.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ai/memory.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ai/ollama_client.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ai/prompts.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/api/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/api/analytics.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/api/calendar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/api/planner.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/api/tasks.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/api/todoist.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/app.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/config.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/database.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/integrations/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/integrations/google_calendar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/integrations/todoist.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ml/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ml/estimator.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ml/priority_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/ml/trainer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/models/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/models/project.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/models/session.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/models/task.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/requirements.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/scheduler/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/scheduler/morning.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/scheduler/nightly.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/services/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/services/deadline_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/services/notification_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/services/planner_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/services/scheduler_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/services/task_parser.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/backend/utils/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/data/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/app/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/components/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/hooks/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/package.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/pages/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/services/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/frontend/styles/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/logs/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/models/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompts/.gitkeep" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/.gitkeep" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 2
+}]]></component>
+  <component name="ProjectId" id="3Ghkbkqcl9HQL24akTR4nZ8qTqC" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "git-widget-placeholder": "master",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-f2b7a9f6281b-6e1f45a539f7-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.29346.142" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="" />
+      <created>1784431261592</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1784431261592</updated>
+    </task>
+    <servers />
+  </component>
+</project>

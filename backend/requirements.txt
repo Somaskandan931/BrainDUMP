@@ -1,0 +1,19 @@
+# Backend dependencies — remaining versions pinned as each milestone lands.
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0,<3.0
+pydantic
+pydantic-settings
+apscheduler
+ollama>=0.6,<0.7
+sentence-transformers
+faiss-cpu
+scikit-learn
+joblib
+xgboost
+lightgbm
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+requests
+python-dotenv

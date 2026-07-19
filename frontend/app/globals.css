@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: theme("colors.hairline");
+}
+
+html,
+body {
+  background: #0a0b0f;
+  color: #e7e9ee;
+}
+
+body {
+  font-family: var(--font-body), sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers read like instrument-panel digits everywhere: fixed width,
+   no jitter as values tick over (focus score, hours, countdowns). */
+.tnum {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #262a35;
+  border-radius: 999px;
+  border: 2px solid #0a0b0f;
+}
+
+/* Visible keyboard focus everywhere, styled to match the panel language
+   instead of the browser default blue ring. */
+:focus-visible {
+  outline: 2px solid #7c8bff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
