@@ -2,9 +2,9 @@
 .env
 .env.local
 *.env
-.env.example
 credentials.json
 token.json
+client_secret_*.json
 
 # Local data
 data/*.db
@@ -23,7 +23,7 @@ venv/
 .ruff_cache/
 *.egg
 
-# Frontend (Milestone 7)
+# Frontend
 frontend/node_modules/
 frontend/.next/
 frontend/out/
@@ -42,6 +42,6 @@ yarn-error.log*
 # OS cruft
 .DS_Store
 Thumbs.db
-client_secret_560408077471-p3fbooiobe1d119ds0tq4u0r2ilag3sh.apps.googleusercontent.com.json
-# Docker (Milestone 9)
+
+# Docker
 docker-compose.override.yml
