@@ -13,6 +13,7 @@ from backend.schemas.task import (
     TaskCreate,
     TaskUpdate,
     TaskRead,
+    TaskReorderRequest,
     SubtaskCreate,
     SubtaskUpdate,
     SubtaskRead,
@@ -21,12 +22,6 @@ from backend.schemas.calendar import (
     CalendarEventRead,
     CalendarSyncResponse,
     CreateSessionEventRequest,
-)
-from backend.schemas.todoist import (
-    TodoistTaskRead,
-    TodoistSyncResponse,
-    PushTaskRequest,
-    PushTaskResponse,
 )
 from backend.schemas.analytics import (
     ProjectProgress,
@@ -45,16 +40,13 @@ __all__ = [
     "TaskCreate",
     "TaskUpdate",
     "TaskRead",
+    "TaskReorderRequest",
     "SubtaskCreate",
     "SubtaskUpdate",
     "SubtaskRead",
     "CalendarEventRead",
     "CalendarSyncResponse",
     "CreateSessionEventRequest",
-    "TodoistTaskRead",
-    "TodoistSyncResponse",
-    "PushTaskRequest",
-    "PushTaskResponse",
     "ProjectProgress",
     "WeeklyReviewResponse",
     "CategoryEstimationError",

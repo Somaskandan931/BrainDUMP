@@ -23,10 +23,13 @@ from backend.schemas.task import (
     TaskCreate,
     TaskUpdate,
     TaskRead,
+    TaskReorderRequest,
     SubtaskCreate,
     SubtaskUpdate,
     SubtaskRead,
 )
+from backend.schemas.deadline import TaskDeadlinePlan
+from backend.services import deadline_service
 from backend.services.scheduler_service import complete_task as complete_task_service
 
 router = APIRouter()
@@ -54,7 +57,32 @@ def list_tasks(
         query = query.filter(Task.project_id == project_id)
     if status_filter is not None:
         query = query.filter(Task.status == status_filter)
-    return query.order_by(Task.created_at.desc()).all()
+    # Manually-ordered tasks (drag-to-prioritize in the Today list) come
+    # first in the order the user set; anything never dragged falls back
+    # to newest-first, same as before sort_order existed.
+    return query.order_by(
+        Task.sort_order.is_(None), Task.sort_order, Task.created_at.desc()
+    ).all()
+
+
+@router.post("/reorder", response_model=List[TaskRead])
+def reorder_tasks(payload: TaskReorderRequest, db: Session = Depends(get_db)) -> List[Task]:
+    """
+    Persist a drag-to-reorder from the Today list. Assigns sort_order
+    0..n-1 in the order given; tasks not included are left untouched (so
+    reordering one filtered view doesn't disturb another).
+    """
+    tasks = db.query(Task).filter(Task.id.in_(payload.task_ids)).all()
+    by_id = {t.id: t for t in tasks}
+    missing = [tid for tid in payload.task_ids if tid not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Task(s) not found: {missing}")
+
+    for index, task_id in enumerate(payload.task_ids):
+        by_id[task_id].sort_order = index
+
+    db.commit()
+    return [by_id[tid] for tid in payload.task_ids]
 
 
 @router.get("/{task_id}", response_model=TaskRead)
@@ -79,13 +107,19 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     return task
 
 
-@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)) -> None:
-    task = db.get(Task, task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    db.delete(task)
+@router.delete("/subtasks/{subtask_id}", status_code=status.HTTP_200_OK)
+def delete_subtask(subtask_id: int, db: Session = Depends(get_db)):
+    subtask = db.get(Subtask, subtask_id)
+    if subtask is None:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+
+    db.delete(subtask)
     db.commit()
+
+    return {
+        "success": True,
+        "message": "Subtask deleted successfully"
+    }
 
 
 @router.post("/{task_id}/complete", response_model=TaskRead)
@@ -94,6 +128,22 @@ def complete_task(task_id: int, db: Session = Depends(get_db)) -> Task:
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return complete_task_service(db, task)
+
+
+@router.get("/{task_id}/deadline-plan", response_model=TaskDeadlinePlan)
+def get_deadline_plan(task_id: int, db: Session = Depends(get_db)) -> dict:
+    """
+    The Deadline Engine: safe / default / aggressive target completion
+    dates for this task, each checked against real free calendar time.
+    404 if the task doesn't exist, 400 if it has no deadline to plan
+    against (there's nothing to compute a buffer from).
+    """
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.deadline is None:
+        raise HTTPException(status_code=400, detail="Task has no deadline to plan against")
+    return deadline_service.compute_deadline_plan(db, task)
 
 
 # --- Subtask CRUD (nested under a task) ---------------------------------
@@ -132,10 +182,16 @@ def update_subtask(subtask_id: int, payload: SubtaskUpdate, db: Session = Depend
     return subtask
 
 
-@router.delete("/subtasks/{subtask_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_subtask(subtask_id: int, db: Session = Depends(get_db)) -> None:
+@router.delete("/subtasks/{subtask_id}", status_code=status.HTTP_200_OK)
+def delete_subtask(subtask_id: int, db: Session = Depends(get_db)):
     subtask = db.get(Subtask, subtask_id)
     if subtask is None:
         raise HTTPException(status_code=404, detail="Subtask not found")
+
     db.delete(subtask)
     db.commit()
+
+    return {
+        "success": True,
+        "message": "Subtask deleted successfully"
+    }

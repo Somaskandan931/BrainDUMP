@@ -42,6 +42,6 @@ yarn-error.log*
 # OS cruft
 .DS_Store
 Thumbs.db
-
+client_secret_560408077471-p3fbooiobe1d119ds0tq4u0r2ilag3sh.apps.googleusercontent.com.json
 # Docker (Milestone 9)
 docker-compose.override.yml

@@ -3,6 +3,8 @@
 import useSWR from "swr";
 import { projectsApi } from "@/services/api";
 import { Project, ProjectCreate, ProjectUpdate } from "@/services/types";
+import { useToast } from "@/components/ui/Toast";
+import { friendlyApiError } from "@/lib/format";
 
 export function useProjects(statusFilter?: string) {
   const { data, error, isLoading, mutate } = useSWR<Project[]>(
@@ -10,6 +12,7 @@ export function useProjects(statusFilter?: string) {
     () => projectsApi.list(statusFilter),
     { revalidateOnFocus: true }
   );
+  const toast = useToast();
 
   return {
     projects: data ?? [],
@@ -17,18 +20,32 @@ export function useProjects(statusFilter?: string) {
     error,
     refresh: mutate,
     create: async (payload: ProjectCreate) => {
-      const created = await projectsApi.create(payload);
-      await mutate();
-      return created;
+      try {
+        const created = await projectsApi.create(payload);
+        await mutate();
+        return created;
+      } catch (err) {
+        toast.error(friendlyApiError(err, "Couldn't create the project."));
+        return null;
+      }
     },
     update: async (id: number, payload: ProjectUpdate) => {
-      const updated = await projectsApi.update(id, payload);
-      await mutate();
-      return updated;
+      try {
+        const updated = await projectsApi.update(id, payload);
+        await mutate();
+        return updated;
+      } catch (err) {
+        toast.error(friendlyApiError(err, "Couldn't update the project."));
+        return null;
+      }
     },
     remove: async (id: number) => {
-      await projectsApi.remove(id);
-      await mutate();
+      try {
+        await projectsApi.remove(id);
+        await mutate();
+      } catch (err) {
+        toast.error(friendlyApiError(err, "Couldn't delete the project."));
+      }
     },
   };
 }

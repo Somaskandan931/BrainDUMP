@@ -59,9 +59,6 @@ All tables inherit `created_at` / `updated_at` (UTC, auto-managed) from
   serialize cleanly to JSON for the FastAPI layer without a custom
   encoder, while still being validated at the DB layer via
   SQLAlchemy's `Enum` type.
-- **No external task-service table.** A `Task.todoist_id` column was
-  added during Milestone 6 for Todoist reconciliation and later removed
-  when Todoist sync was dropped in favor of a native task manager.
 
 ## Verified
 

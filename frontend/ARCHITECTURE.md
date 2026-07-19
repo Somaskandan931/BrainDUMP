@@ -29,7 +29,7 @@
 (SQLite stores everything — data/tasks.db, data/history.db)
 ```
 
-Everything runs on one machine. The only outbound network calls are the
+Everything runs on one machine. The only outbound network call is the
 optional Google Calendar sync; the LLM, database, and vector
 search are all local.
 
@@ -114,7 +114,7 @@ ai_os/
   likely evolve independently.
 - **`integrations/` isolated from `services/`** — Google Calendar is
   the only component that talks to the outside world. Keeping
-  them in one folder makes the "local-first, no data leaves the machine
+  it in one folder makes the "local-first, no data leaves the machine
   except X" guarantee easy to audit.
 - **`scheduler/` (APScheduler jobs) vs `services/scheduler_service.py`** —
   the folder holds *when* things run (cron-like jobs); the service holds
@@ -202,14 +202,15 @@ design notes.
 
 ~~**Milestone 6 — Google Calendar integration**~~ ✅ done —
 `backend/integrations/google_calendar.py` (OAuth flow, `list_events()`,
-`get_free_busy()`, `create_event()`/`update_event()`/`delete_event()`) is
-real, backed by `services/calendar_sync_service.py`.
+`get_free_busy()`, `create_event()`/`update_event()`/`delete_event()`)
+is real, backed by `services/calendar_sync_service.py`.
 `POST/GET /api/calendar/*` is live —
 `generate_free_slots()` didn't need to change at all, since it already
 read busy time from `CalendarEvent` regardless of source; this milestone
-just populates that table with real Google events (`source=GOOGLE`). The
-integration is opt-in and fails soft. (Todoist sync was also built in
-this milestone but later removed in favor of a native task manager.) See
+just populates that table with real Google events (`source=GOOGLE`).
+The integration is opt-in and fails soft. (Todoist was also built during
+this milestone but later removed — see
+`backend/integrations/INTEGRATIONS.md` for why.) See
 `backend/integrations/INTEGRATIONS.md` for setup steps and design notes.
 
 ~~**Milestone 8 — Analytics and ML components**~~ ✅ done —

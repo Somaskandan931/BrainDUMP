@@ -15,18 +15,22 @@ import {
   BrainDumpResponse,
   CalendarEvent,
   CalendarSyncResponse,
+  EstimationErrorResponse,
   GoalResponse,
   NextTaskResponse,
+  ProductivityHoursResponse,
   Project,
   ProjectCreate,
   ProjectUpdate,
   ReplanResponse,
+  StreaksResponse,
   Subtask,
   Task,
   TaskCreate,
+  TaskDeadlinePlan,
   TaskUpdate,
-  TodoistSyncResponse,
-  TodoistTask,
+  WeeklyReviewResponse,
+  WorkloadResponse,
 } from "./types";
 
 const BASE_URL =
@@ -111,6 +115,7 @@ export const tasksApi = {
   update: (id: number, data: TaskUpdate) => put<Task>(`/api/tasks/${id}`, data),
   remove: (id: number) => del<void>(`/api/tasks/${id}`),
   complete: (id: number) => post<Task>(`/api/tasks/${id}/complete`),
+  reorder: (taskIds: number[]) => post<Task[]>("/api/tasks/reorder", { task_ids: taskIds }),
   addSubtask: (taskId: number, data: { title: string; estimated_hours?: number | null }) =>
     post<Subtask>(`/api/tasks/${taskId}/subtasks`, data),
   listSubtasks: (taskId: number) => get<Subtask[]>(`/api/tasks/${taskId}/subtasks`),
@@ -119,6 +124,7 @@ export const tasksApi = {
     data: Partial<Pick<Subtask, "title" | "status" | "estimated_hours" | "actual_hours">>
   ) => put<Subtask>(`/api/tasks/subtasks/${id}`, data),
   removeSubtask: (id: number) => del<void>(`/api/tasks/subtasks/${id}`),
+  deadlinePlan: (id: number) => get<TaskDeadlinePlan>(`/api/tasks/${id}/deadline-plan`),
 };
 
 // --- Planner (AI agents + scheduler) ---------------------------------------
@@ -142,27 +148,16 @@ export const calendarApi = {
     post<CalendarEvent>("/api/calendar/create-session", data),
 };
 
-// --- Todoist (Milestone 6) ---------------------------------------------------
-
-export const todoistApi = {
-  tasks: () => get<TodoistTask[]>("/api/todoist/tasks"),
-  sync: () => post<TodoistSyncResponse>("/api/todoist/sync"),
-  pushTask: (taskId: number) =>
-    post<{ task_id: number; todoist_id: string }>("/api/todoist/push-task", {
-      task_id: taskId,
-    }),
-};
-
-// --- Analytics (Milestone 8 — currently 501) --------------------------------
-// Kept as real calls (not stubs) so the moment Milestone 8 lands these
-// start returning data with zero frontend changes. Callers should catch
-// ApiError with status 501 and render EmptyState, not treat it as a bug.
+// --- Analytics (Milestone 8 — real, backed by services/analytics_service.py) -
 
 export const analyticsApi = {
-  weeklyReview: () => get<unknown>("/api/analytics/weekly-review"),
-  estimationError: () => get<unknown>("/api/analytics/estimation-error"),
-  streaks: () => get<unknown>("/api/analytics/streaks"),
-  productivityHours: () => get<unknown>("/api/analytics/productivity-hours"),
+  weeklyReview: () => get<WeeklyReviewResponse>("/api/analytics/weekly-review"),
+  estimationError: () => get<EstimationErrorResponse>("/api/analytics/estimation-error"),
+  streaks: () => get<StreaksResponse>("/api/analytics/streaks"),
+  productivityHours: () => get<ProductivityHoursResponse>("/api/analytics/productivity-hours"),
+  // Workload Engine (PRD Milestone 4) — daily/weekly/monthly capacity vs.
+  // allocated hours, backed by services/workload_service.py.
+  workload: () => get<WorkloadResponse>("/api/analytics/workload"),
 };
 
 export { ApiError, BASE_URL };

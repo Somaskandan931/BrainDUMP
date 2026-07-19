@@ -16,11 +16,11 @@ into scheduler_service/deadline_service directly:
 
 Brain Dump -> Intent Extraction -> Project Detection -> Task Breakdown ->
 Time Estimation -> Dependency Detection -> Priority Calculation ->
-Schedule Optimization -> Calendar Sync -> Todoist Sync -> Dashboard Update
+Schedule Optimization -> Calendar Sync -> Dashboard Update
 
 ("Brain Dump -> ... -> Task Breakdown" for the free-text path is
 services/task_parser.py; "Task Breakdown" for the single-goal path is
-generate_from_goal() below. Dependency Detection and real Calendar/Todoist
+generate_from_goal() below. Dependency Detection and real Calendar
 Sync are not yet implemented — see backend/ai/AGENTS.md and Milestone 6
 respectively.)
 """

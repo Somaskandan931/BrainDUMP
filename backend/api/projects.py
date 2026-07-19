@@ -2,7 +2,7 @@
 api/projects.py — CRUD endpoints for Project.
 
 Added in Milestone 3. Not in the original Milestone 1 folder sketch
-(which only listed planner/tasks/analytics/calendar/todoist), but
+(which only listed planner/tasks/analytics/calendar), but
 Projects need their own CRUD surface since they're the parent entity
 for Tasks and the API would be awkward without it — see
 ARCHITECTURE.md for the note on this addition.
@@ -65,10 +65,16 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
     return project
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, db: Session = Depends(get_db)) -> None:
+@router.delete("/{project_id}", status_code=status.HTTP_200_OK)
+def delete_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    db.delete(project)  # cascades to tasks -> subtasks/sessions/etc.
+
+    db.delete(project)
     db.commit()
+
+    return {
+        "success": True,
+        "message": "Project deleted successfully"
+    }

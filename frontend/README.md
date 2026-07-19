@@ -195,7 +195,7 @@ No mocked data is used.
 
 Brain Dump uses SQLite and Ollama to keep AI inference local.
 
-No user data leaves the machine except through optional Google Calendar synchronization.
+No user data leaves the machine except through the optional Google Calendar synchronization.
 
 ---
 
@@ -237,9 +237,9 @@ Brain Dump continuously evaluates deadlines, priorities, calendar availability, 
 
 ### Graceful Integrations
 
-Google Calendar is optional.
+Google Calendar sync is optional.
 
-If either service is unavailable or not configured, Brain Dump continues functioning normally while skipping only the affected synchronization step.
+If it is unavailable or not configured, Brain Dump continues functioning normally while skipping only the affected synchronization step.
 
 ---
 

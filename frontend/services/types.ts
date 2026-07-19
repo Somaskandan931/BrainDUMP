@@ -73,6 +73,7 @@ export interface Task {
   confidence_score: number | null;
   priority_score: number | null;
   context_switch_cost: number | null;
+  sort_order: number | null;
   created_at: string;
   updated_at: string;
   subtasks: Subtask[];
@@ -98,6 +99,7 @@ export interface TaskUpdate {
   deadline?: string | null;
   estimated_hours?: number | null;
   actual_hours?: number | null;
+  sort_order?: number | null;
 }
 
 export interface BrainDumpResponse {
@@ -142,18 +144,116 @@ export interface CalendarSyncResponse {
   errors: string[];
 }
 
-export interface TodoistTask {
-  todoist_id: string;
-  content: string;
-  due: string | null;
-  priority: number;
+// --- Deadline Engine (services/deadline_service.py) -------------------------
+
+export type BufferLevel = "safe" | "default" | "aggressive";
+export type BufferStatus = "done" | "safe" | "tight" | "impossible";
+
+export interface DeadlineBuffer {
+  level: BufferLevel;
+  target_date: string;
+  days_remaining: number;
+  free_hours_available: number;
+  hours_needed: number;
+  suggested_daily_hours: number | null;
+  status: BufferStatus;
+  message: string;
 }
 
-export interface TodoistSyncResponse {
-  pulled: number;
-  pushed: number;
-  closed: number;
-  errors: string[];
+export interface TaskDeadlinePlan {
+  task_id: number;
+  title: string;
+  deadline: string;
+  estimated_hours: number | null;
+  hours_remaining: number;
+  buffers: DeadlineBuffer[];
+}
+
+export type WorkloadLevel = "light" | "moderate" | "full" | "overloaded";
+
+export interface WorkloadDay {
+  date: string;
+  weekday: string;
+  capacity_hours: number;
+  allocated_hours: number;
+  utilization_pct: number;
+  level: WorkloadLevel;
+}
+
+export interface WorkloadPeriod {
+  label: string;
+  capacity_hours: number;
+  allocated_hours: number;
+  utilization_pct: number;
+  overload_pct: number | null;
+}
+
+export interface WorkloadResponse {
+  days: WorkloadDay[];
+  week: WorkloadPeriod;
+  month: WorkloadPeriod;
+  peak_day: string | null;
+}
+
+// --- Analytics (Milestone 8 — real, see services/analytics_service.py) -----
+
+export interface ProjectProgress {
+  project_id: number;
+  project_name: string;
+  tasks_total: number;
+  tasks_completed: number;
+  completion_rate: number;
+}
+
+export interface WeeklyReviewResponse {
+  period_start: string;
+  period_end: string;
+  tasks_completed: number;
+  tasks_planned: number;
+  completion_rate: number | null;
+  hours_worked: number;
+  most_productive_day: string | null;
+  least_productive_day: string | null;
+  most_underestimated_category: string | null;
+  most_underestimated_pct: number | null;
+  missed_deadlines: number;
+  project_progress: ProjectProgress[];
+  recommendation: string;
+  ai_generated: boolean;
+}
+
+export type EstimationBias = "overestimates" | "underestimates" | "accurate";
+
+export interface CategoryEstimationError {
+  category: string;
+  sample_count: number;
+  average_error_pct: number;
+  bias: EstimationBias;
+}
+
+export interface EstimationErrorResponse {
+  overall_average_error_pct: number | null;
+  overall_sample_count: number;
+  by_category: CategoryEstimationError[];
+}
+
+export interface StreaksResponse {
+  current_streak_days: number;
+  longest_streak_days: number;
+  active_today: boolean;
+  last_active_date: string | null;
+}
+
+export interface HourBucket {
+  hour: number;
+  hours_logged: number;
+  sessions_count: number;
+}
+
+export interface ProductivityHoursResponse {
+  by_hour: HourBucket[];
+  best_hour: number | null;
+  lookback_days: number;
 }
 
 /** Thrown by services/api.ts for any non-2xx response. */

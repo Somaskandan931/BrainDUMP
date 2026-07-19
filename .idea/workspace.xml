@@ -5,134 +5,46 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/BrainDUMP.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ARCHITECTURE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ANALYTICS.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ai/AGENTS.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ai/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ai/embeddings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ai/memory.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ai/ollama_client.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ai/prompts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/API.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/analytics.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/calendar.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/planner.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/projects.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/tasks.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/api/todoist.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/database.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/integrations/INTEGRATIONS.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/integrations/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/integrations/google_calendar.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/integrations/todoist.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ml/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ml/estimator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ml/priority_model.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/ml/trainer.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/SCHEMA.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/calendar_event.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/enums.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/metrics.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/mixins.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/prediction.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/project.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/session.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/settings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/models/task.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/requirements.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/scheduler/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/scheduler/morning.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/scheduler/nightly.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/analytics.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/calendar.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/planner.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/project.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/task.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/schemas/todoist.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/PLANNING.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/analytics_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/calendar_sync_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/deadline_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/notification_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/planner_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/scheduler_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/task_parser.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/services/todoist_sync_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/utils/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/brain-dump-API.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/brain-dump-SCHEMA.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/brain-dump-agents.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/.env.local.example" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/.eslintrc.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/FRONTEND.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/analytics/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/brain-dump/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/calendar/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/chat/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/globals.css" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/layout.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/projects/[id]/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/projects/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/providers.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/app/settings/page.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/dashboard/BrainDumpForm.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/dashboard/DeadlineRiskCard.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/dashboard/DueTodayCard.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/dashboard/NextBestTaskCard.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/dashboard/RadialGauge.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/layout/ConnectionStatus.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/layout/Sidebar.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/layout/TopBar.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/projects/ProjectCard.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/tasks/TaskRow.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/ui/Badge.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/ui/Button.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/ui/Card.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/ui/EmptyState.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/components/ui/Skeleton.tsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/hooks/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/hooks/usePlanner.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/hooks/useProjects.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/hooks/useTasks.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/lib/format.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/next.config.mjs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/package-lock.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/package.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/pages/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/postcss.config.mjs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/services/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/services/api.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/services/types.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/styles/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/tailwind.config.ts" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/frontend/tsconfig.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/logs/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/models/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/prompts/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/.gitkeep" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/manual_milestone6_check.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/manual_milestone8_check.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ARCHITECTURE.md" beforeDir="false" afterPath="$PROJECT_DIR$/ARCHITECTURE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/ANALYTICS.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/ANALYTICS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/API.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/API.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/analytics.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/analytics.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/projects.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/projects.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/tasks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/integrations/INTEGRATIONS.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/integrations/INTEGRATIONS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/models/SCHEMA.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/models/SCHEMA.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/models/task.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/models/task.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/scheduler/morning.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/scheduler/morning.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/scheduler/nightly.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/scheduler/nightly.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/schemas/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/schemas/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/schemas/task.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/schemas/task.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/services/PLANNING.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/PLANNING.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/services/deadline_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/deadline_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/services/planner_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/planner_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brain-dump-API.md" beforeDir="false" afterPath="$PROJECT_DIR$/brain-dump-API.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brain-dump-SCHEMA.md" beforeDir="false" afterPath="$PROJECT_DIR$/brain-dump-SCHEMA.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/FRONTEND.md" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/FRONTEND.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/analytics/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/analytics/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/calendar/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/calendar/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/providers.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/providers.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/settings/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/settings/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/components/layout/Sidebar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/layout/Sidebar.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/hooks/usePlanner.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/hooks/usePlanner.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/hooks/useProjects.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/hooks/useProjects.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/hooks/useTasks.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/hooks/useTasks.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/lib/format.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/format.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/services/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/services/api.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/services/types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/services/types.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/.gitkeep" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/manual_milestone6_check.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/manual_milestone8_check.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -142,40 +54,46 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "Somaskandan931"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;Somaskandan931&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/Somaskandan931/BrainDUMP.git",
-    "accountId": "5ec63760-78d3-472c-b8fd-b1c0514162d2"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/Somaskandan931/BrainDUMP.git&quot;,
+    &quot;accountId&quot;: &quot;5ec63760-78d3-472c-b8fd-b1c0514162d2&quot;
   }
-}]]></component>
+}</component>
   <component name="McpProjectServerCommands">
     <commands />
     <urls />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 2
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
   <component name="ProjectId" id="3Ghkbkqcl9HQL24akTR4nZ8qTqC" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "git-widget-placeholder": "main",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\PycharmProjects\BrainDUMP" />
+      <recent name="D:\PycharmProjects\BrainDUMP\backend\integrations" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

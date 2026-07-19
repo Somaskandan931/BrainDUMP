@@ -6,15 +6,14 @@ Milestone 5 implementation:
    free slots, reading busy time from the CalendarEvent table.
 2. get_next_task() computes today's single "Do Next" recommendation.
 
-Milestone 6 adds real Google Calendar + Todoist sync around that core:
+Milestone 6 adds real Google Calendar sync around that core:
 0. Pull real Google Calendar events first, so step 1 above carves around
    actual meetings/classes, not just previously-scheduled Brain Dump
    sessions.
-3. Push today's newly scheduled sessions to Google Calendar and sync
-   Todoist (pull new/removed items, push anything still local-only).
-   Both are wrapped in try/except: an unconfigured integration (no
-   credentials.json / no TODOIST_API_TOKEN yet) degrades the morning job
-   to "just don't sync that one thing" rather than failing the whole run.
+3. Push today's newly scheduled sessions to Google Calendar. Wrapped in
+   try/except: an unconfigured integration (no credentials.json yet)
+   degrades the morning job to "just don't sync that one thing" rather
+   than failing the whole run.
 
 Everything is written to the settings table under "last_morning_summary"
 as the dashboard payload (Milestone 7 reads it; there's no dashboard API
@@ -30,9 +29,8 @@ from datetime import datetime, timezone
 
 from backend.database import SessionLocal
 from backend.integrations.google_calendar import GoogleCalendarError
-from backend.integrations.todoist import TodoistError
 from backend.models.settings import Setting
-from backend.services import calendar_sync_service, scheduler_service, todoist_sync_service
+from backend.services import calendar_sync_service, scheduler_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +45,6 @@ def _try_sync_calendar(db) -> dict:
         return {"pulled": 0, "pushed": 0, "removed": 0, "errors": [str(exc)]}
 
 
-def _try_sync_todoist(db) -> dict:
-    try:
-        return todoist_sync_service.sync_todoist(db)
-    except TodoistError as exc:
-        logger.info("Morning job: Todoist sync skipped (%s)", exc)
-        return {"pulled": 0, "pushed": 0, "closed": 0, "errors": [str(exc)]}
-
-
 def run_morning_job() -> dict:
     """Entry point registered with APScheduler in app.py. Owns its own DB session."""
     db = SessionLocal()
@@ -67,7 +57,6 @@ def run_morning_job() -> dict:
         # Push today's freshly-created sessions up to Google right away
         # rather than waiting for tomorrow's pull-first pass.
         calendar_push = calendar_sync_service.push_pending_sessions(db)
-        todoist_result = _try_sync_todoist(db)
 
         summary = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -77,7 +66,6 @@ def run_morning_job() -> dict:
             "next_task_title": next_task.title if next_task else None,
             "calendar_sync": calendar_result,
             "calendar_sessions_pushed": calendar_push[0],
-            "todoist_sync": todoist_result,
         }
 
         setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()

@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, Text, DateTime, Float, UniqueConstraint
+from sqlalchemy import ForeignKey, String, Text, DateTime, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -65,14 +65,12 @@ class Task(Base, TimestampMixin):
     priority_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     context_switch_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # --- Milestone 6: Todoist two-way sync -----------------------------------
-    # Null for tasks that only ever existed in Brain Dump. Set the moment a
-    # task is either pushed to Todoist or pulled in from it — see
-    # services/todoist_sync_service.py. Unique so reconciliation can't
-    # accidentally double-link two local tasks to the same remote item.
-    todoist_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-
-    __table_args__ = (UniqueConstraint("todoist_id", name="uq_tasks_todoist_id"),)
+    # Manual ordering set by dragging a task in the Today list. Deliberately
+    # separate from priority_score (which the ML priority engine owns and
+    # the scheduler reads) — this is purely "what order does the user want
+    # to see these in", never fed back into scheduling. Null until the user
+    # drags something; untouched tasks fall back to created_at ordering.
+    sort_order: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     # --- Relationships ------------------------------------------------------
     project: Mapped[Optional["Project"]] = relationship(back_populates="tasks")

@@ -28,6 +28,7 @@ FastAPI app in `backend/app.py`. Interactive docs at `/docs` once running.
 | POST | `/api/planner/replan` | 🔜 501 | Needs Milestone 5 |
 | GET | `/api/analytics/*` (4 routes) | 🔜 501 | Needs Milestone 8 |
 | GET/POST | `/api/calendar/*` (3 routes) | 🔜 501 | Needs Milestone 6 |
+| GET/POST | `/api/todoist/*` (3 routes) | 🔜 501 | Needs Milestone 6 |
 
 ## Design decisions
 
@@ -41,7 +42,7 @@ FastAPI app in `backend/app.py`. Interactive docs at `/docs` once running.
   surface — adding the file was a natural, small extension of the
   planned structure rather than a scope change.
 - **Everything not yet implemented returns `501`, not a fake 200.**
-  Planner, Calendar, and Analytics routes are registered (so
+  Planner, Calendar, Todoist, and Analytics routes are registered (so
   the API surface and OpenAPI docs are stable and won't need a breaking
   change later) but each explicitly raises `HTTPException(501)` with a
   message naming the milestone that implements it. This was a

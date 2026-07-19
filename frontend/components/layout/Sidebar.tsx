@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/format";
 
 const NAV = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "Today", icon: LayoutDashboard },
   { href: "/brain-dump", label: "Brain Dump", icon: BrainCircuit },
   { href: "/projects", label: "Projects", icon: SquareKanban },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },

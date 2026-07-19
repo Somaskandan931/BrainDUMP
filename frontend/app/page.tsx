@@ -6,8 +6,9 @@ import { TopBar } from "@/components/layout/TopBar";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { NextBestTaskCard } from "@/components/dashboard/NextBestTaskCard";
 import { DueTodayCard } from "@/components/dashboard/DueTodayCard";
-import { DeadlineRiskCard } from "@/components/dashboard/DeadlineRiskCard";
-import { BrainDumpForm } from "@/components/dashboard/BrainDumpForm";
+import { TaskQuickAddPanel } from "@/components/dashboard/TaskQuickAddPanel";
+import { DeadlinesPanel } from "@/components/dashboard/DeadlinesPanel";
+import { WorkloadHeatmap } from "@/components/dashboard/WorkloadHeatmap";
 import { useProjects } from "@/hooks/useProjects";
 
 function greeting(): string {
@@ -31,7 +32,7 @@ export default function DashboardPage() {
         <p className="mt-0.5 text-[13px] text-ink-muted">
           {projects.length > 0
             ? `${projects.length} active project${projects.length === 1 ? "" : "s"}`
-            : "No active projects yet — start with a brain dump below."}
+            : "No active projects yet — add your first task below."}
         </p>
       </TopBar>
 
@@ -39,21 +40,18 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-4 lg:col-span-2">
           <NextBestTaskCard />
           <DueTodayCard />
-
-          <Card>
-            <CardHeader eyebrow="POST /api/planner/brain-dump" title="Quick brain dump" />
-            <BrainDumpForm compact />
-          </Card>
+          <TaskQuickAddPanel />
         </div>
 
         <div className="flex flex-col gap-4">
-          <DeadlineRiskCard />
+          <DeadlinesPanel />
+          <WorkloadHeatmap />
 
           <Card>
             <CardHeader eyebrow="Milestone 8" title="Weekly review" />
             <p className="text-[13px] text-ink-muted">
-              Estimation error, streaks, and productive-hour analysis land once the
-              analytics pipeline is built.
+              Estimation error, streaks, and productive-hour analysis — full
+              breakdown on the analytics page.
             </p>
             <Link
               href="/analytics"

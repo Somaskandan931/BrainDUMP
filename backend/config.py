@@ -2,8 +2,8 @@
 config.py — Centralized app configuration.
 
 Milestone 2: real database paths wired up. Milestone 4: Ollama settings
-wired up. Milestone 6: Calendar/Todoist settings wired up (values now
-come from a local .env — see .env.example at the repo root; nothing
+wired up. Milestone 6: Calendar settings wired up (values now
+come from a local .env — see .env at the repo root; nothing
 secret is hardcoded or committed).
 """
 
@@ -41,10 +41,10 @@ OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL = "qwen3:8b"
 
 # ---------------------------------------------------------------------------
-# Calendar / Todoist (Milestone 6)
+# Calendar (Milestone 6)
 # ---------------------------------------------------------------------------
 # OAuth client secret downloaded from Google Cloud Console (Desktop app
-# credential type). Never committed — see .env.example / INTEGRATIONS.md
+# credential type). Never committed — see .env / INTEGRATIONS.md
 # for the one-time setup steps.
 GOOGLE_CREDENTIALS_PATH = BASE_DIR / "credentials.json"
 # Written automatically on first successful OAuth flow; holds the refresh
@@ -52,12 +52,6 @@ GOOGLE_CREDENTIALS_PATH = BASE_DIR / "credentials.json"
 GOOGLE_TOKEN_PATH = BASE_DIR / "token.json"
 GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
-
-# Personal API token from Todoist Settings -> Integrations -> Developer.
-# None (rather than "") when unset, so integrations/todoist.py has an
-# unambiguous "not configured yet" check.
-TODOIST_API_TOKEN = os.getenv("TODOIST_API_TOKEN") or None
-TODOIST_API_BASE_URL = "https://api.todoist.com/rest/v2"
 
 # How far back "sync" also re-checks for stale/removed events, in addition
 # to config.SCHEDULING_HORIZON_DAYS ahead (reused as-is for the forward
@@ -87,6 +81,29 @@ MIN_SLOT_MINUTES = 15
 # Fallback duration used when a task has no estimated_hours yet and the
 # Estimator can't infer one either (see ml/estimator.py DEFAULT_HOURS_BY_IMPORTANCE).
 DEFAULT_TASK_HOURS = 1.0
+
+# --- Deadline Engine buffers (services/deadline_service.py) -----------------
+# "When should I actually aim to be done" is a spectrum, not one date.
+# Each level pulls the target completion date this many days before the
+# real deadline. Aggressive = the deadline itself (0-day buffer).
+DEADLINE_BUFFER_DAYS = {
+    "safe": 2,
+    "default": 1,
+    "aggressive": 0,
+}
+
+# Feasibility thresholds, expressed as (free calendar hours before the
+# target) / (hours of work still needed). >= SAFE ratio -> plenty of
+# room; >= TIGHT ratio -> fits, but no slack; below TIGHT -> the math
+# doesn't work at this buffer level without moving something else.
+DEADLINE_SAFE_RATIO = 1.5
+DEADLINE_TIGHT_RATIO = 1.0
+
+# How far past the furthest buffer target to look for free slots, and
+# the hard cap regardless of how far away the deadline is (a deadline
+# months out shouldn't make this scan an unbounded window).
+DEADLINE_PLAN_LOOKAHEAD_PADDING_DAYS = 3
+DEADLINE_PLAN_MAX_HORIZON_DAYS = 60
 
 # --- Priority Engine weights (ml/priority_model.py) -------------------------
 # Hand-tuned weighted sum for Milestone 5. Milestone 8 replaces this with a

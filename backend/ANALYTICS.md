@@ -54,7 +54,7 @@ tier on top of its Milestone 5 group-median baseline.
     this milestone expensive enough to not redo per-request. Wrapped in
     a broad `except Exception` so an ML failure (missing optional dep,
     corrupt `models/` dir) degrades this one step, not the rest of the
-    nightly job (replan, calendar/Todoist sync).
+    nightly job (replan, calendar sync).
 - **`backend/api/analytics.py`** / **`schemas/analytics.py`** — thin
   routing layer; all real logic lives in the service module above, same
   pattern as every other API module in this repo.
@@ -111,7 +111,7 @@ and reports the right sample count; confirms `estimate_hours()` on a
 fresh task actually uses the newly trained model; confirms
 `weekly_review()` picks up the underestimation bias and produces an
 AI-generated recommendation (Ollama call monkeypatched, same pattern as
-`manual_milestone6_check.py`'s Google/Todoist mocks); confirms
+`manual_milestone6_check.py`'s Google Calendar mocks); confirms
 `estimation_error()` correctly resolves the numeric category back to the
 project name and labels it `"underestimates"`; confirms `streaks()` and
 `productivity_hours()` read back exactly what was seeded; and confirms

@@ -122,10 +122,9 @@ in an hour) as at-risk and — because it's HIGH importance — correctly does
 
 ## Next milestone
 
-**Milestone 6 — Google Calendar and Todoist integrations**: implement
+**Milestone 6 — Google Calendar integration**: implement
 `backend/integrations/google_calendar.py` (OAuth flow, `get_free_busy()`,
-`create_event()`) and `backend/integrations/todoist.py`
-(`push_task()`/`pull_tasks()`), and turn `api/calendar.py`/`api/todoist.py`
+`create_event()`), and turn `api/calendar.py`
 from `501` into real sync endpoints. `scheduler_service.generate_free_slots()`
 already reads busy time from the local `CalendarEvent` table, so the main
 work is populating that table from the real Google Calendar API (source=

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useCalendarEvents } from "@/hooks/usePlanner";
-import { calendarApi, todoistApi } from "@/services/api";
+import { calendarApi } from "@/services/api";
 import { ApiError } from "@/services/types";
 import { cn } from "@/lib/format";
 
@@ -19,9 +19,7 @@ const SOURCE_TONE = { google: "primary", brain_dump: "signal", manual: "neutral"
 function SyncPanel() {
   const { refresh } = useCalendarEvents();
   const [calStatus, setCalStatus] = useState<string | null>(null);
-  const [todoistStatus, setTodoistStatus] = useState<string | null>(null);
   const [syncingCal, setSyncingCal] = useState(false);
-  const [syncingTodoist, setSyncingTodoist] = useState(false);
 
   async function syncCalendar() {
     setSyncingCal(true);
@@ -47,25 +45,8 @@ function SyncPanel() {
     }
   }
 
-  async function syncTodoist() {
-    setSyncingTodoist(true);
-    setTodoistStatus(null);
-    try {
-      const res = await todoistApi.sync();
-      setTodoistStatus(
-        res.errors.length
-          ? res.errors.join("; ")
-          : `Pulled ${res.pulled}, pushed ${res.pushed}, closed ${res.closed}.`
-      );
-    } catch (err) {
-      setTodoistStatus(err instanceof ApiError ? err.message : "Sync failed.");
-    } finally {
-      setSyncingTodoist(false);
-    }
-  }
-
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-1">
       <Card>
         <CardHeader eyebrow="POST /api/calendar/sync" title="Google Calendar" />
         <p className="mb-3 text-[13px] text-ink-muted">
@@ -77,19 +58,6 @@ function SyncPanel() {
           {syncingCal ? "Syncing…" : "Sync now"}
         </Button>
         {calStatus && <p className="mt-2 text-[12px] text-ink-faint">{calStatus}</p>}
-      </Card>
-
-      <Card>
-        <CardHeader eyebrow="POST /api/todoist/sync" title="Todoist" />
-        <p className="mb-3 text-[13px] text-ink-muted">
-          Imports open Todoist items as tasks, pushes new Brain Dump tasks out, closes
-          completed ones.
-        </p>
-        <Button variant="secondary" size="sm" onClick={syncTodoist} disabled={syncingTodoist}>
-          <RefreshCw size={13} className={cn(syncingTodoist && "animate-spin")} />
-          {syncingTodoist ? "Syncing…" : "Sync now"}
-        </Button>
-        {todoistStatus && <p className="mt-2 text-[12px] text-ink-faint">{todoistStatus}</p>}
       </Card>
     </div>
   );

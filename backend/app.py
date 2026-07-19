@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend import config
 from backend.database import init_db
-from backend.api import projects, tasks, planner, analytics, calendar, todoist
+from backend.api import projects, tasks, planner, analytics, calendar
 from backend.scheduler.morning import run_morning_job
 from backend.scheduler.nightly import run_nightly_job
 
@@ -70,7 +70,6 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(planner.router, prefix="/api/planner", tags=["planner"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["calendar"])
-app.include_router(todoist.router, prefix="/api/todoist", tags=["todoist"])
 
 
 @app.get("/health", tags=["meta"])

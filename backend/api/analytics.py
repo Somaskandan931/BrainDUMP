@@ -19,7 +19,8 @@ from backend.schemas.analytics import (
     StreaksResponse,
     WeeklyReviewResponse,
 )
-from backend.services import analytics_service
+from backend.schemas.workload import WorkloadResponse
+from backend.services import analytics_service, workload_service
 
 router = APIRouter()
 
@@ -42,3 +43,12 @@ def productivity_hours(db: Session = Depends(get_db)) -> ProductivityHoursRespon
 @router.get("/streaks", response_model=StreaksResponse)
 def streaks(db: Session = Depends(get_db)) -> StreaksResponse:
     return analytics_service.streaks(db)
+
+
+@router.get("/workload", response_model=WorkloadResponse)
+def workload(db: Session = Depends(get_db)) -> WorkloadResponse:
+    """
+    The Workload Engine (PRD Milestone 4): daily/weekly/monthly capacity
+    vs. allocated hours, for the dashboard heatmap.
+    """
+    return workload_service.get_workload(db)

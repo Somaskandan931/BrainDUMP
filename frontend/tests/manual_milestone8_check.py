@@ -3,7 +3,7 @@ Manual Milestone 8 verification script — exercises
 backend/services/analytics_service.py and backend/ml/trainer.py /
 estimator.py directly against a throwaway SQLite DB, monkeypatching the
 Ollama call (no local model available in this environment) the same way
-manual_milestone6_check.py monkeypatches Google Calendar / Todoist.
+manual_milestone6_check.py monkeypatches Google Calendar.
 
 Not a pytest suite (Milestone 9 — Testing and Docker — is where this
 project gets a real one); run directly with

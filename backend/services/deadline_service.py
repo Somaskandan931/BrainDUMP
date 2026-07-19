@@ -20,7 +20,7 @@ Milestone 5 responsibilities:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -125,6 +125,107 @@ def compress_schedule(db: Session, now: datetime | None = None) -> List[Task]:
     _clear_future_schedule(db, now)
     db.commit()
     return scheduler_service.schedule_pending_tasks(db)
+
+
+def _buffer_target(deadline: datetime, buffer_days: int) -> datetime:
+    """Aggressive (0-day buffer) is the deadline itself; others pull earlier."""
+    return deadline - timedelta(days=buffer_days)
+
+
+def _free_hours_before(db: Session, now: datetime, target: datetime) -> float:
+    """
+    Free calendar hours between `now` and `target`, reusing the same
+    slot-generation logic the scheduler and at-risk detection use — so
+    "can I actually fit this" means the same thing everywhere in the app.
+    """
+    if target <= now:
+        return 0.0
+
+    horizon_days = min(
+        config.DEADLINE_PLAN_MAX_HORIZON_DAYS,
+        (target - now).days + config.DEADLINE_PLAN_LOOKAHEAD_PADDING_DAYS,
+    )
+    free_slots = scheduler_service.generate_free_slots(db, now, horizon_days=horizon_days)
+    free_minutes = sum(s.minutes for s in free_slots if s.start < target)
+    return free_minutes / 60.0
+
+
+def _buffer_status(hours_needed: float, free_hours: float) -> str:
+    if hours_needed <= 0:
+        return "done"
+    ratio = free_hours / hours_needed
+    if ratio >= config.DEADLINE_SAFE_RATIO:
+        return "safe"
+    if ratio >= config.DEADLINE_TIGHT_RATIO:
+        return "tight"
+    return "impossible"
+
+
+def _buffer_message(level: str, target: datetime, status: str, daily_hours: Optional[float]) -> str:
+    target_label = target.strftime("%b %d")
+    if status == "done":
+        return "Already done — nothing left to schedule."
+    if status == "impossible":
+        return f"Not enough free time before {target_label} at this buffer — something else needs to move."
+    if level == "aggressive":
+        return f"Complete by {target.strftime('%b %d, %I:%M %p')}"
+    daily = f" · ~{daily_hours:.1f}h/day" if daily_hours else ""
+    return f"Complete before {target_label}{daily}"
+
+
+def compute_deadline_plan(db: Session, task: Task, now: datetime | None = None) -> dict:
+    """
+    The Deadline Engine: for a task with a deadline, compute three target
+    completion dates (safe / default / aggressive) and whether the user's
+    actual free calendar time can support each one. `estimated_hours`
+    minus any already-logged `actual_hours` is treated as the remaining
+    work — a task that's partly done needs less runway than a fresh one.
+    """
+    if task.deadline is None:
+        raise ValueError("compute_deadline_plan requires a task with a deadline")
+
+    now = now or datetime.now(timezone.utc)
+    deadline = task.deadline
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+
+    estimated = task.estimated_hours if task.estimated_hours is not None else config.DEFAULT_TASK_HOURS
+    hours_remaining = max(0.0, estimated - (task.actual_hours or 0.0))
+
+    buffers = []
+    for level, buffer_days in config.DEADLINE_BUFFER_DAYS.items():
+        target = _buffer_target(deadline, buffer_days)
+        days_remaining = max(0.0, (target - now).total_seconds() / 86400.0)
+        free_hours = _free_hours_before(db, now, target)
+        status = _buffer_status(hours_remaining, free_hours)
+        daily_hours = (hours_remaining / days_remaining) if days_remaining > 0 else hours_remaining
+
+        buffers.append(
+            {
+                "level": level,
+                "target_date": target,
+                "days_remaining": round(days_remaining, 2),
+                "free_hours_available": round(free_hours, 2),
+                "hours_needed": round(hours_remaining, 2),
+                "suggested_daily_hours": round(daily_hours, 2) if daily_hours else None,
+                "status": status,
+                "message": _buffer_message(level, target, status, daily_hours),
+            }
+        )
+
+    # Aggressive first (nearest target) through safe last (furthest out) —
+    # matches how the frontend reads it top-to-bottom, most urgent first.
+    order = {"aggressive": 0, "default": 1, "safe": 2}
+    buffers.sort(key=lambda b: order[b["level"]])
+
+    return {
+        "task_id": task.id,
+        "title": task.title,
+        "deadline": deadline,
+        "estimated_hours": task.estimated_hours,
+        "hours_remaining": round(hours_remaining, 2),
+        "buffers": buffers,
+    }
 
 
 def replan(db: Session) -> dict:

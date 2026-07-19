@@ -18,9 +18,8 @@ Milestone 5 implementation:
    a model).
 
 Milestone 6 adds: after replanning, push the freshly-repacked schedule
-to Google Calendar and sync Todoist (closing anything completed today,
-reconciling anything closed on the phone). Wrapped in try/except so an
-unconfigured integration degrades this one step, not the whole job.
+to Google Calendar. Wrapped in try/except so an unconfigured integration
+degrades this one step, not the whole job.
 
 Milestone 8 adds: tasks_planned on today's ProductivityMetric is now a
 real count (distinct tasks with a Brain-Dump-scheduled CalendarEvent
@@ -36,13 +35,12 @@ from datetime import date, datetime, timedelta, timezone
 
 from backend.database import SessionLocal
 from backend.integrations.google_calendar import GoogleCalendarError
-from backend.integrations.todoist import TodoistError
 from backend.models.calendar_event import CalendarEvent
 from backend.models.metrics import ProductivityMetric
 from backend.models.enums import EventSource, TaskStatus
 from backend.models.task import Task
 from backend.models.settings import Setting
-from backend.services import calendar_sync_service, deadline_service, todoist_sync_service
+from backend.services import calendar_sync_service, deadline_service
 
 logger = logging.getLogger(__name__)
 
@@ -116,17 +114,11 @@ def run_nightly_job() -> dict:
             logger.info("Nightly job: Google Calendar push skipped (%s)", exc)
             calendar_sync_result = {"pushed": 0, "errors": [str(exc)]}
 
-        try:
-            todoist_sync_result = todoist_sync_service.sync_todoist(db)
-        except TodoistError as exc:
-            logger.info("Nightly job: Todoist sync skipped (%s)", exc)
-            todoist_sync_result = {"pulled": 0, "pushed": 0, "closed": 0, "errors": [str(exc)]}
-
         # Weekly (Sunday) retrain of ml/estimator.py's regressor. Wrapped
         # broadly -- sklearn/joblib issues (missing optional dep, a
         # corrupt models/ dir, low disk space) shouldn't take down the
         # rest of the nightly job, which is the part with actual
-        # user-facing consequences (replan, calendar/Todoist sync).
+        # user-facing consequences (replan, calendar sync).
         ml_retrain_result: dict = {"ran": False}
         if today.weekday() == 6:  # Sunday
             try:
@@ -146,7 +138,6 @@ def run_nightly_job() -> dict:
             "demoted_count": len(replan_result["demoted_tasks"]),
             "at_risk_count": len(replan_result["at_risk_tasks"]),
             "calendar_sync": calendar_sync_result,
-            "todoist_sync": todoist_sync_result,
             "ml_retrain": ml_retrain_result,
         }
 

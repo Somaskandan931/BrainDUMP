@@ -13,7 +13,7 @@ Every page calls a real backend route from `backend/api/API.md` through
 | Dashboard | `/api/planner/next-task`, `/api/tasks/`, derived client-side ratios | Live |
 | Brain Dump | `/api/planner/brain-dump`, `/api/planner/goal` | Live |
 | Projects | `/api/projects/*`, `/api/tasks/*` | Live |
-| Calendar | `/api/calendar/*`, `/api/todoist/*` | Live |
+| Calendar | `/api/calendar/*` | Live |
 | AI Chat | `/api/planner/brain-dump`, `/replan`, `/next-task` | Live (see below) |
 | Analytics | `/api/analytics/*` | Real calls, correctly render "not built yet" — routes are 501 until Milestone 8 |
 | Settings | none (static docs + `NEXT_PUBLIC_API_URL`) | N/A |

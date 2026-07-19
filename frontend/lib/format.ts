@@ -54,3 +54,15 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
+
+/**
+ * Turn a caught error from services/api.ts into something safe to show a
+ * user in a toast. status === 0 means the fetch itself failed (backend
+ * unreachable) — that's the ApiError.message already crafted for humans.
+ */
+export function friendlyApiError(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.name === "ApiError") {
+    return err.message;
+  }
+  return fallback;
+}

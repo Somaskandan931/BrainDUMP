@@ -33,9 +33,6 @@ FastAPI app in `backend/app.py`. Interactive docs at `/docs` once running.
 | GET | `/api/calendar/events` | ✅ live | Milestone 6 — local cache, optional `?source=` |
 | POST | `/api/calendar/sync` | ✅ live | Milestone 6 — 424 if `credentials.json` missing |
 | POST | `/api/calendar/create-session` | ✅ live | Milestone 6 — ad hoc "start now" session |
-| GET | `/api/todoist/tasks` | ✅ live | Milestone 6 — live read-through, not cached |
-| POST | `/api/todoist/sync` | ✅ live | Milestone 6 — 200 + `errors` entry if token missing |
-| POST | `/api/todoist/push-task` | ✅ live | Milestone 6 — 424/502 on failure (unlike batch sync) |
 
 ## Design decisions
 
@@ -49,7 +46,7 @@ FastAPI app in `backend/app.py`. Interactive docs at `/docs` once running.
   surface — adding the file was a natural, small extension of the
   planned structure rather than a scope change.
 - **Everything not yet implemented returns `501`, not a fake 200.**
-  Planner, Calendar, and Todoist routes were registered this way (so the
+  Planner and Calendar routes were registered this way (so the
   API surface and OpenAPI docs stayed stable and wouldn't need a
   breaking change later) but each explicitly raised
   `HTTPException(501)` naming the milestone that implements it, rather
@@ -99,11 +96,12 @@ into real, working endpoints. — done, see `backend/ai/AGENTS.md`.
 `GET /api/planner/next-task` / `POST /api/planner/replan` from `501`
 into real endpoints. — done, see `backend/services/PLANNING.md`.
 
-**Milestone 6 — Google Calendar and Todoist integrations**: implement
-`backend/integrations/google_calendar.py` / `todoist.py`, wire
-`services/calendar_sync_service.py` / `todoist_sync_service.py`, and turn
-all six `/api/calendar/*` and `/api/todoist/*` routes from `501` into
-real endpoints. — done, see `backend/integrations/INTEGRATIONS.md`.
+**Milestone 6 — Google Calendar integration**: implement
+`backend/integrations/google_calendar.py`, wire
+`services/calendar_sync_service.py`, and turn the four `/api/calendar/*`
+routes from `501` into real endpoints. — done, see
+`backend/integrations/INTEGRATIONS.md`. (Todoist sync was also built in
+this milestone but later removed — see the project roadmap.)
 
 **Milestone 8 — Analytics and ML components**: implement
 `backend/services/analytics_service.py` and `backend/ml/trainer.py`, and

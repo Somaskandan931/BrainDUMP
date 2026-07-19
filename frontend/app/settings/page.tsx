@@ -52,7 +52,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader eyebrow="Setup" title="Integrations" />
           <ul className="flex flex-col gap-2">
-            <DocLink href="backend/integrations/INTEGRATIONS.md" label="Google Calendar & Todoist setup" />
+            <DocLink href="backend/integrations/INTEGRATIONS.md" label="Google Calendar setup" />
             <DocLink href="backend/ai/AGENTS.md" label="AI agent prompts and design" />
             <DocLink href="backend/services/PLANNING.md" label="Scheduler and priority engine" />
             <DocLink href="backend/api/API.md" label="Full API route table" />

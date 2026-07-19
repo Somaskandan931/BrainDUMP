@@ -67,6 +67,13 @@ class TaskUpdate(BaseModel):
     deadline: Optional[datetime] = None
     estimated_hours: Optional[float] = Field(default=None, ge=0)
     actual_hours: Optional[float] = Field(default=None, ge=0)
+    sort_order: Optional[int] = None
+
+
+class TaskReorderRequest(BaseModel):
+    """Ordered list of task IDs, top to bottom, from a Today-list drag."""
+
+    task_ids: List[int]
 
 
 class TaskRead(BaseModel):
@@ -86,6 +93,7 @@ class TaskRead(BaseModel):
     confidence_score: Optional[float]
     priority_score: Optional[float]
     context_switch_cost: Optional[float]
+    sort_order: Optional[int]
     created_at: datetime
     updated_at: datetime
     subtasks: List[SubtaskRead] = []
