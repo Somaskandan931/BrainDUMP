@@ -4,22 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/backend/ai/prompts.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/ai/prompts.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/api/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/tasks.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/ml/priority_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/ml/priority_model.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/models/enums.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/models/enums.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/models/task.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/models/task.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/scheduler/morning.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/scheduler/morning.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/scheduler/nightly.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/scheduler/nightly.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/schemas/task.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/schemas/task.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/services/deadline_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/deadline_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/services/notification_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/notification_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/services/scheduler_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/services/scheduler_service.py" afterDir="false" />
-    </list>
+    <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

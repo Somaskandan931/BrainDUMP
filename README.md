@@ -151,9 +151,7 @@ Per the PRD, BrainDUMP's product philosophy rests on six principles:
 
 Team collaboration, shared workspaces, and multi-tenancy are explicitly out of scope for the MVP — BrainDUMP is built for a single user's personal execution.
 
-## License
 
-*Add your license here (e.g. MIT) before publishing.*
 
 ---
 
