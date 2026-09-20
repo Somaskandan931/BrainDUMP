@@ -38,3 +38,14 @@ class PushTaskRequest(BaseModel):
 class PushTaskResponse(BaseModel):
     task_id: int
     todoist_id: str
+
+
+class TodoistConnectRequest(BaseModel):
+    """Settings page: paste-in personal API token (Todoist -> Settings ->
+    Integrations -> Developer). No OAuth app registration needed."""
+
+    api_token: str
+
+
+class TodoistConnectionStatus(BaseModel):
+    connected: bool

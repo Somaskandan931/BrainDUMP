@@ -24,6 +24,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend import config
 from backend.ai import episodic_memory, long_term_memory
 from backend.ml import estimator
@@ -213,6 +214,7 @@ def pack_tasks_into_schedule(
         block_end = block_start + timedelta(minutes=needed_minutes)
 
         event = CalendarEvent(
+            user_id=owner_id(db),
             task_id=task.id,
             title=task.title,
             start_time=block_start,
@@ -225,6 +227,7 @@ def pack_tasks_into_schedule(
         db.flush()  # assigns event.id for the WorkSession FK below
 
         session = WorkSession(
+            user_id=owner_id(db),
             task_id=task.id,
             calendar_event_id=event.id,
             start_time=block_start,

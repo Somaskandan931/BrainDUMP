@@ -16,7 +16,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
+from backend.database import owner_id
+from backend.models.project import Project
 from backend.models.task import Task, Subtask
 from backend.models.enums import TaskStatus
 from backend.schemas.task import (
@@ -38,11 +40,21 @@ from backend.services.scheduler_service import (
 router = APIRouter()
 
 
+def _require_own_project(db: Session, project_id: Optional[int]) -> None:
+    """404 unless `project_id` is None or one of the caller's own projects. The
+    tenant filter hides other users' rows from reads, but a foreign key alone
+    would happily accept any project id, so a task could be attached to (and
+    reference) someone else's project. A foreign project reads as nonexistent."""
+    if project_id is not None and db.get(Project, project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+
 # --- Task CRUD ---------------------------------------------------------
 
 @router.post("/", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
-    task = Task(**payload.model_dump())
+def create_task(payload: TaskCreate, db: Session = Depends(get_scoped_db)) -> Task:
+    _require_own_project(db, payload.project_id)
+    task = Task(user_id=owner_id(db), **payload.model_dump())
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -53,7 +65,7 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
 def list_tasks(
     project_id: Optional[int] = None,
     status_filter: Optional[TaskStatus] = None,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_scoped_db),
 ) -> List[Task]:
     query = db.query(Task)
     if project_id is not None:
@@ -69,7 +81,7 @@ def list_tasks(
 
 
 @router.post("/reorder", response_model=List[TaskRead])
-def reorder_tasks(payload: TaskReorderRequest, db: Session = Depends(get_db)) -> List[Task]:
+def reorder_tasks(payload: TaskReorderRequest, db: Session = Depends(get_scoped_db)) -> List[Task]:
     """
     Persist a drag-to-reorder from the Today list. Assigns sort_order
     0..n-1 in the order given; tasks not included are left untouched (so
@@ -89,7 +101,7 @@ def reorder_tasks(payload: TaskReorderRequest, db: Session = Depends(get_db)) ->
 
 
 @router.get("/{task_id}", response_model=TaskRead)
-def get_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+def get_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -97,12 +109,14 @@ def get_task(task_id: int, db: Session = Depends(get_db)) -> Task:
 
 
 @router.put("/{task_id}", response_model=TaskRead)
-def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)) -> Task:
+def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_scoped_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    _require_own_project(db, changes.get("project_id"))
+    for field, value in changes.items():
         setattr(task, field, value)
 
     db.commit()
@@ -111,7 +125,7 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{task_id}", response_model=TaskRead)
-def archive_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+def archive_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     """
     Soft delete: per PRD §33/§63 ("DELETE /api/tasks/{id} — Archive
     task" / "Soft delete"), this must not hard-delete the row — history,
@@ -131,7 +145,7 @@ def archive_task(task_id: int, db: Session = Depends(get_db)) -> Task:
 
 
 @router.post("/{task_id}/complete", response_model=TaskRead)
-def complete_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+def complete_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -139,7 +153,7 @@ def complete_task(task_id: int, db: Session = Depends(get_db)) -> Task:
 
 
 @router.post("/{task_id}/skip", response_model=TaskRead)
-def skip_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+def skip_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     """Push a task to the back of today's order without marking it done."""
     task = db.get(Task, task_id)
     if task is None:
@@ -148,7 +162,7 @@ def skip_task(task_id: int, db: Session = Depends(get_db)) -> Task:
 
 
 @router.get("/{task_id}/deadline-plan", response_model=TaskDeadlinePlan)
-def get_deadline_plan(task_id: int, db: Session = Depends(get_db)) -> dict:
+def get_deadline_plan(task_id: int, db: Session = Depends(get_scoped_db)) -> dict:
     """
     The Deadline Engine: safe / default / aggressive target completion
     dates for this task, each checked against real free calendar time.
@@ -167,7 +181,7 @@ def get_deadline_plan(task_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{task_id}/explain-estimate")
-def explain_estimate(task_id: int, db: Session = Depends(get_db)) -> dict:
+def explain_estimate(task_id: int, db: Session = Depends(get_scoped_db)) -> dict:
     """
     'Why this estimate?' — which tier of the estimator ladder produced
     the base number, and what personal calibration (if any) was applied
@@ -180,7 +194,7 @@ def explain_estimate(task_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{task_id}/explain-deadline-risk")
-def explain_deadline_risk(task_id: int, db: Session = Depends(get_db)) -> dict:
+def explain_deadline_risk(task_id: int, db: Session = Depends(get_scoped_db)) -> dict:
     """'Why is this deadline at risk?' — the plain-language reasons
     behind this task's current risk_score. 400 if it has no deadline."""
     task = db.get(Task, task_id)
@@ -194,11 +208,11 @@ def explain_deadline_risk(task_id: int, db: Session = Depends(get_db)) -> dict:
 # --- Subtask CRUD (nested under a task) ---------------------------------
 
 @router.post("/{task_id}/subtasks", response_model=SubtaskRead, status_code=status.HTTP_201_CREATED)
-def create_subtask(task_id: int, payload: SubtaskCreate, db: Session = Depends(get_db)) -> Subtask:
+def create_subtask(task_id: int, payload: SubtaskCreate, db: Session = Depends(get_scoped_db)) -> Subtask:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    subtask = Subtask(task_id=task_id, **payload.model_dump())
+    subtask = Subtask(user_id=owner_id(db), task_id=task_id, **payload.model_dump())
     db.add(subtask)
     db.commit()
     db.refresh(subtask)
@@ -206,7 +220,7 @@ def create_subtask(task_id: int, payload: SubtaskCreate, db: Session = Depends(g
 
 
 @router.get("/{task_id}/subtasks", response_model=List[SubtaskRead])
-def list_subtasks(task_id: int, db: Session = Depends(get_db)) -> List[Subtask]:
+def list_subtasks(task_id: int, db: Session = Depends(get_scoped_db)) -> List[Subtask]:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -214,7 +228,7 @@ def list_subtasks(task_id: int, db: Session = Depends(get_db)) -> List[Subtask]:
 
 
 @router.put("/subtasks/{subtask_id}", response_model=SubtaskRead)
-def update_subtask(subtask_id: int, payload: SubtaskUpdate, db: Session = Depends(get_db)) -> Subtask:
+def update_subtask(subtask_id: int, payload: SubtaskUpdate, db: Session = Depends(get_scoped_db)) -> Subtask:
     subtask = db.get(Subtask, subtask_id)
     if subtask is None:
         raise HTTPException(status_code=404, detail="Subtask not found")

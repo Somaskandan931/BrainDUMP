@@ -7,11 +7,13 @@ import {
   CalendarDays,
   LayoutDashboard,
   LineChart,
+  LogOut,
   MessagesSquare,
   Settings,
   SquareKanban,
 } from "lucide-react";
 import { cn } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
 
 const NAV = [
   { href: "/", label: "Today", icon: LayoutDashboard },
@@ -24,6 +26,7 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   return (
     <aside className="hidden w-[220px] shrink-0 flex-col border-r border-hairline bg-surface/60 px-3 py-5 md:flex">
@@ -74,6 +77,24 @@ export function Sidebar() {
         <Settings size={16} strokeWidth={2} />
         Settings
       </Link>
+
+      {user && (
+        <div className="mt-2 flex items-center gap-2.5 rounded-md px-3 py-2">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-dim text-[11px] font-semibold text-primary-hover">
+            {(user.name || user.email)[0]?.toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">
+            {user.name || user.email}
+          </div>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="text-ink-muted transition-colors hover:text-ink"
+          >
+            <LogOut size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

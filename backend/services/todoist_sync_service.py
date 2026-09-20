@@ -16,6 +16,14 @@ models/task.py):
   closed there too.
 - sync_todoist(): the combined pass both the API's POST /sync and the
   morning/nightly jobs call.
+
+Multi-user auth follow-up: every function reads *this session's* user's
+personal Todoist API token via services/integration_credentials_service
+and passes it into every backend.integrations.todoist call. A user who
+hasn't connected Todoist gets TodoistNotConfigured, same as before this
+refactor (previously that meant the shared env var was unset; now it
+means this particular account has no token saved). New Task rows get
+user_id=owner_id(db), same as every other tenant-owned table.
 """
 
 from __future__ import annotations
@@ -25,10 +33,11 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.integrations import todoist
 from backend.models.enums import TaskStatus
 from backend.models.task import Task
-from backend.services import scheduler_service
+from backend.services import integration_credentials_service, scheduler_service
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +48,11 @@ def pull_todoist_tasks(db: Session) -> tuple:
     whose linked Todoist item has disappeared (closed/deleted on
     Todoist's side). Commits once. Returns (pulled_count, errors).
     """
+    api_token = integration_credentials_service.get_todoist_token(db)
+
     errors: List[str] = []
     try:
-        remote_tasks = todoist.pull_tasks()
+        remote_tasks = todoist.pull_tasks(api_token)
     except todoist.TodoistError as exc:
         return 0, [str(exc)]
 
@@ -54,6 +65,7 @@ def pull_todoist_tasks(db: Session) -> tuple:
         if remote["todoist_id"] in linked_by_id:
             continue  # already imported, nothing new to create
         task = Task(
+            user_id=owner_id(db),
             title=remote["content"],
             deadline=remote["due"],
             importance=todoist.priority_to_importance(remote["priority"]),
@@ -83,6 +95,8 @@ def push_pending_tasks(db: Session) -> tuple:
     close the Todoist item for local Tasks that were completed here but
     are still open there. Commits once. Returns (pushed_count, closed_count, errors).
     """
+    api_token = integration_credentials_service.get_todoist_token(db)
+
     errors: List[str] = []
     pushed = 0
     closed = 0
@@ -99,6 +113,7 @@ def push_pending_tasks(db: Session) -> tuple:
         try:
             remote = todoist.push_task(
                 task.title,
+                api_token=api_token,
                 due_date=task.deadline,
                 priority=todoist.importance_to_priority(task.importance),
                 description=task.description,
@@ -116,7 +131,7 @@ def push_pending_tasks(db: Session) -> tuple:
     )
     for task in linked_completed:
         try:
-            todoist.close_task(task.todoist_id)
+            todoist.close_task(task.todoist_id, api_token=api_token)
             closed += 1
         except todoist.TodoistError as exc:
             errors.append(f"Task {task.id} ({task.title!r}) close: {exc}")
@@ -133,8 +148,10 @@ def push_single_task(db: Session, task: Task) -> Task:
     failure — the API layer converts those to a clear HTTP status
     rather than silently no-op'ing like the batch sync does.
     """
+    api_token = integration_credentials_service.get_todoist_token(db)
     remote = todoist.push_task(
         task.title,
+        api_token=api_token,
         due_date=task.deadline,
         priority=todoist.importance_to_priority(task.importance),
         description=task.description,

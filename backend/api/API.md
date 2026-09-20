@@ -39,7 +39,11 @@ FastAPI app in `backend/app.py`. Interactive docs at `/docs` once running.
 | GET | `/api/analytics/streaks` | Live | Completion streaks |
 | GET | `/api/analytics/productivity-hours` | Live | Buckets `WorkSession` by hour of day |
 | GET | `/api/calendar/events` | Live | Local cache, optional `?source=` |
-| POST | `/api/calendar/sync` | Live | 424 if `credentials.json` missing |
+| POST | `/api/calendar/sync` | Live | 424 if the server has no OAuth client or this user hasn't connected |
+| GET | `/api/calendar/google/status` | Live | `{oauth_client_configured, connected}` for the caller |
+| GET | `/api/calendar/google/connect` | Live | Returns the Google consent URL (authenticated) |
+| GET | `/api/calendar/google/callback` | Live | Called by Google, no bearer token; identifies the user via signed `state`; always redirects to the frontend |
+| DELETE | `/api/calendar/google` | Live | Disconnect: drops stored credentials + cached Google events |
 | POST | `/api/calendar/create-session` | Live | Ad hoc "start now" session |
 | GET | `/api/memory/episodic` | Live | Episodic Memory (PRD §63): recent events, optional `?event_type=` `?limit=` |
 | GET | `/api/memory/long-term` | Live | Long-Term Memory (PRD §63): derived profile (peak hours, estimation bias, recent completed projects) |

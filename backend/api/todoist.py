@@ -18,26 +18,54 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
+from backend.database import owner_id
 from backend.integrations.todoist import TodoistError, TodoistNotConfigured
 from backend.models.task import Task
 from backend.schemas.todoist import (
     PushTaskRequest,
     PushTaskResponse,
+    TodoistConnectRequest,
+    TodoistConnectionStatus,
     TodoistSyncResponse,
     TodoistTaskRead,
 )
-from backend.services import todoist_sync_service
+from backend.services import integration_credentials_service, todoist_sync_service
 from backend.integrations import todoist as todoist_client
 
 router = APIRouter()
 
 
+@router.get("/status", response_model=TodoistConnectionStatus)
+def todoist_status(db: Session = Depends(get_scoped_db)) -> TodoistConnectionStatus:
+    return TodoistConnectionStatus(connected=integration_credentials_service.has_todoist_connected(db))
+
+
+@router.post("/connect", response_model=TodoistConnectionStatus)
+def connect_todoist(payload: TodoistConnectRequest, db: Session = Depends(get_scoped_db)) -> TodoistConnectionStatus:
+    """
+    Settings page: paste in a personal Todoist API token (Todoist ->
+    Settings -> Integrations -> Developer). Unlike Google Calendar this
+    needs no redirect flow -- Todoist's REST v2 personal token is
+    enough on its own.
+    """
+    if not payload.api_token or not payload.api_token.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="api_token is required")
+    integration_credentials_service.save_todoist_token(db, payload.api_token)
+    return TodoistConnectionStatus(connected=True)
+
+
+@router.delete("/disconnect", status_code=status.HTTP_204_NO_CONTENT)
+def disconnect_todoist(db: Session = Depends(get_scoped_db)) -> None:
+    integration_credentials_service.disconnect_todoist(db)
+
+
 @router.get("/tasks", response_model=List[TodoistTaskRead])
-def list_todoist_tasks() -> List[TodoistTaskRead]:
+def list_todoist_tasks(db: Session = Depends(get_scoped_db)) -> List[TodoistTaskRead]:
     """Live read-through to Todoist's active items — not the local cache."""
+    api_token = integration_credentials_service.get_todoist_token(db)
     try:
-        remote_tasks = todoist_client.pull_tasks()
+        remote_tasks = todoist_client.pull_tasks(api_token)
     except TodoistNotConfigured as exc:
         raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
     except TodoistError as exc:
@@ -46,7 +74,7 @@ def list_todoist_tasks() -> List[TodoistTaskRead]:
 
 
 @router.post("/sync", response_model=TodoistSyncResponse)
-def sync_todoist(db: Session = Depends(get_db)) -> TodoistSyncResponse:
+def sync_todoist(db: Session = Depends(get_scoped_db)) -> TodoistSyncResponse:
     """
     Two-way sync: import new/removed Todoist items first, then push
     whatever Brain Dump tasks are still only local. Always 200 — a
@@ -59,7 +87,7 @@ def sync_todoist(db: Session = Depends(get_db)) -> TodoistSyncResponse:
 
 
 @router.post("/push-task", response_model=PushTaskResponse)
-def push_task(payload: PushTaskRequest, db: Session = Depends(get_db)) -> PushTaskResponse:
+def push_task(payload: PushTaskRequest, db: Session = Depends(get_scoped_db)) -> PushTaskResponse:
     """Push exactly one task to Todoist on demand. Fails loudly, unlike batch /sync."""
     task = db.get(Task, payload.task_id)
     if task is None:

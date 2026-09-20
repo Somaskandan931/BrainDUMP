@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.ai.ollama_client import call_model_json
 from backend.ai.prompts import TASK_PARSER_SYSTEM, build_task_parser_prompt
 from backend.models.enums import Importance, EnergyLevel
@@ -53,7 +54,7 @@ def _resolve_project(
 
     project = db.query(Project).filter(Project.name.ilike(name.strip())).first()
     if project is None:
-        project = Project(name=name.strip())
+        project = Project(user_id=owner_id(db), name=name.strip())
         db.add(project)
         db.flush()  # assigns project.id without committing the whole transaction yet
         newly_created.append(project)
@@ -125,6 +126,7 @@ def parse_brain_dump(db: Session, text: str) -> Tuple[List[Project], List[Task]]
             touched_projects.append(project)
 
         task = Task(
+            user_id=owner_id(db),
             project_id=project.id if project is not None else None,
             title=title[:300],
             description=item.get("description") or None,

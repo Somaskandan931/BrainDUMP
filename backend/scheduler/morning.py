@@ -11,9 +11,9 @@ Milestone 6 adds real Google Calendar sync around that core:
    actual meetings/classes, not just previously-scheduled Brain Dump
    sessions.
 3. Push today's newly scheduled sessions to Google Calendar. Wrapped in
-   try/except: an unconfigured integration (no credentials.json yet)
-   degrades the morning job to "just don't sync that one thing" rather
-   than failing the whole run.
+   try/except: an unconfigured integration (this user hasn't connected
+   Google Calendar) degrades the morning job to "just don't sync that
+   one thing" rather than failing the whole run.
 
 Daily Planner narration (previously a documented gap in ai/prompts.py):
 4. _daily_narration() turns the plan already computed by steps 1-3 above
@@ -29,6 +29,18 @@ Everything is written to the settings table under "last_morning_summary"
 as the dashboard payload. GET /api/planner/today (api/planner.py) reads
 it back for the frontend; it's a read of the last morning job's output,
 not a live recomputation.
+
+Multi-user auth follow-up: this used to run once, globally, against
+whatever rows happened to be in the database -- fine for one local
+user, silently wrong for several (every user's tasks would get packed
+into one shared schedule). run_morning_job() now loops over every
+active User and runs the whole pipeline once per user, with
+db.info["user_id"] set by hand for that iteration -- there's no HTTP
+request here to have set it via api.deps.get_scoped_db, so this job
+is exactly the "background jobs set it by hand" case
+backend/database.py's docstring calls out. One user's failure is
+logged and skipped rather than aborting the whole run for everyone
+else.
 """
 
 from __future__ import annotations
@@ -39,9 +51,10 @@ from datetime import datetime, timezone
 
 from backend.ai.ollama_client import OllamaError, call_model
 from backend.ai.prompts import DAILY_PLANNER_SYSTEM, build_daily_planner_prompt
-from backend.database import SessionLocal
+from backend.database import SessionLocal, owner_id
 from backend.integrations.google_calendar import GoogleCalendarError
 from backend.models.settings import Setting
+from backend.models.user import User
 from backend.services import calendar_sync_service, notification_service, scheduler_service
 
 logger = logging.getLogger(__name__)
@@ -55,6 +68,19 @@ def _try_sync_calendar(db) -> dict:
     except GoogleCalendarError as exc:
         logger.info("Morning job: Google Calendar sync skipped (%s)", exc)
         return {"pulled": 0, "pushed": 0, "removed": 0, "errors": [str(exc)]}
+
+
+def _try_push_sessions(db) -> tuple:
+    """(pushed_count, error_messages), never raising for an unconnected
+    calendar. Distinct from _try_sync_calendar above, which also pulls --
+    this one only pushes the sessions the scheduler just created, and a
+    user who hasn't connected Google Calendar must not lose the rest of
+    their morning run (narration, notifications, summary) over it."""
+    try:
+        return calendar_sync_service.push_pending_sessions(db)
+    except GoogleCalendarError as exc:
+        logger.info("Morning job: Google Calendar push skipped (%s)", exc)
+        return 0, [str(exc)]
 
 
 def _daily_narration(plan: dict) -> tuple[str, bool]:
@@ -104,54 +130,84 @@ def _rule_based_narration(plan: dict) -> str:
     return sentence
 
 
+def _run_morning_job_for_user(db) -> dict:
+    """The full per-user pipeline, run against a session already scoped
+    (db.info["user_id"] set) to exactly one user. Commits its own work,
+    same as every service function it calls."""
+    calendar_result = _try_sync_calendar(db)
+
+    scheduled = scheduler_service.schedule_pending_tasks(db)
+    next_task = scheduler_service.get_next_task(db)
+
+    # Push today's freshly-created sessions up to Google right away
+    # rather than waiting for tomorrow's pull-first pass.
+    calendar_push = _try_push_sessions(db)
+
+    notifications = notification_service.generate_notifications(db)
+    at_risk_count = sum(1 for n in notifications if n.get("type") == "risk")
+
+    narration_input = {
+        "scheduled_count": len(scheduled),
+        "next_task_title": next_task.title if next_task else None,
+        "next_task_deadline": next_task.deadline.isoformat() if next_task and next_task.deadline else None,
+        "next_task_estimated_hours": next_task.estimated_hours if next_task else None,
+        "at_risk_count": at_risk_count,
+    }
+    narration, narration_ai_generated = _daily_narration(narration_input)
+
+    summary = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "scheduled_count": len(scheduled),
+        "scheduled_task_ids": [t.id for t in scheduled],
+        "next_task_id": next_task.id if next_task else None,
+        "next_task_title": next_task.title if next_task else None,
+        "calendar_sync": calendar_result,
+        "calendar_sessions_pushed": calendar_push[0],
+        "notifications": notifications,
+        "narration": narration,
+        "narration_ai_generated": narration_ai_generated,
+    }
+
+    setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()
+    if setting is None:
+        setting = Setting(user_id=owner_id(db), key=_SETTINGS_KEY, value=json.dumps(summary))
+        db.add(setting)
+    else:
+        setting.value = json.dumps(summary)
+    db.commit()
+
+    logger.info(
+        "Morning job: scheduled %d task(s), next up: %s",
+        len(scheduled),
+        next_task.title if next_task else "nothing",
+    )
+    return summary
+
+
 def run_morning_job() -> dict:
-    """Entry point registered with APScheduler in app.py. Owns its own DB session."""
+    """
+    Entry point registered with APScheduler in app.py. Owns its own DB
+    session and loops over every active user, running the full pipeline
+    once per user with tenant filtering turned on for that iteration.
+    Returns {user_id: summary}; a user whose run raised is recorded as
+    {"error": str(exc)} instead of aborting everyone else's run.
+    """
     db = SessionLocal()
     try:
-        calendar_result = _try_sync_calendar(db)
+        user_ids = [row[0] for row in db.query(User.id).filter(User.is_active.is_(True)).all()]
 
-        scheduled = scheduler_service.schedule_pending_tasks(db)
-        next_task = scheduler_service.get_next_task(db)
-
-        # Push today's freshly-created sessions up to Google right away
-        # rather than waiting for tomorrow's pull-first pass.
-        calendar_push = calendar_sync_service.push_pending_sessions(db)
-
-        notifications = notification_service.generate_notifications(db)
-        at_risk_count = sum(1 for n in notifications if n.get("type") == "risk")
-
-        narration_input = {
-            "scheduled_count": len(scheduled),
-            "next_task_title": next_task.title if next_task else None,
-            "next_task_deadline": next_task.deadline.isoformat() if next_task and next_task.deadline else None,
-            "next_task_estimated_hours": next_task.estimated_hours if next_task else None,
-            "at_risk_count": at_risk_count,
-        }
-        narration, narration_ai_generated = _daily_narration(narration_input)
-
-        summary = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "scheduled_count": len(scheduled),
-            "scheduled_task_ids": [t.id for t in scheduled],
-            "next_task_id": next_task.id if next_task else None,
-            "next_task_title": next_task.title if next_task else None,
-            "calendar_sync": calendar_result,
-            "calendar_sessions_pushed": calendar_push[0],
-            "notifications": notifications,
-            "narration": narration,
-            "narration_ai_generated": narration_ai_generated,
-        }
-
-        setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()
-        if setting is None:
-            setting = Setting(key=_SETTINGS_KEY, value=json.dumps(summary))
-            db.add(setting)
-        else:
-            setting.value = json.dumps(summary)
-        db.commit()
-
-        logger.info("Morning job: scheduled %d task(s), next up: %s", len(scheduled), next_task.title if next_task else "nothing")
-        return summary
+        results: dict = {}
+        for user_id in user_ids:
+            db.info["user_id"] = user_id
+            try:
+                results[user_id] = _run_morning_job_for_user(db)
+            except Exception as exc:  # noqa: BLE001 - one user's bug shouldn't skip everyone else's morning job
+                db.rollback()
+                logger.exception("Morning job failed for user %d", user_id)
+                results[user_id] = {"error": str(exc)}
+            finally:
+                db.info.pop("user_id", None)
+        return results
     finally:
         db.close()
 

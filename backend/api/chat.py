@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
 from backend.schemas.chat import ChatRequest, ChatResponse
 from backend.services import ai_coach_service
 
@@ -23,6 +23,6 @@ router = APIRouter()
 
 
 @router.post("/", response_model=ChatResponse)
-def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> dict:
+def chat(payload: ChatRequest, db: Session = Depends(get_scoped_db)) -> dict:
     result = ai_coach_service.handle_message(db, payload.message)
     return result.to_dict()

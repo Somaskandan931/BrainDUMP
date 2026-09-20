@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.ai import episodic_memory, long_term_memory, semantic_memory
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
 from backend.models.enums import EpisodicEventType, SemanticRelationType
 from backend.schemas.memory import EpisodicMemoryResponse, LongTermProfileResponse, SemanticMemoryResponse
 
@@ -28,14 +28,14 @@ router = APIRouter()
 def list_episodic_events(
     event_type: Optional[EpisodicEventType] = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_scoped_db),
 ) -> dict:
     events = episodic_memory.recent_events(db, limit=limit, event_type=event_type)
     return {"events": events}
 
 
 @router.get("/long-term", response_model=LongTermProfileResponse)
-def get_long_term_profile(db: Session = Depends(get_db)) -> dict:
+def get_long_term_profile(db: Session = Depends(get_scoped_db)) -> dict:
     profile = long_term_memory.get_profile(db) or long_term_memory.compute_profile(db)
     return profile
 
@@ -44,7 +44,7 @@ def get_long_term_profile(db: Session = Depends(get_db)) -> dict:
 def list_semantic_relations(
     relation_type: Optional[SemanticRelationType] = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_scoped_db),
 ) -> dict:
     relations = semantic_memory.recent_relations(db, limit=limit, relation_type=relation_type)
     return {"relations": relations}

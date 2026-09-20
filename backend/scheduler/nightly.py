@@ -25,6 +25,16 @@ Milestone 8 adds: tasks_planned on today's ProductivityMetric is now a
 real count (distinct tasks with a Brain-Dump-scheduled CalendarEvent
 today), not a placeholder — see _today_metrics(). completion_rate can
 finally be computed from it.
+
+Multi-user auth follow-up: same fix as scheduler/morning.py -- this
+used to run once, globally. run_nightly_job() now loops over every
+active User and runs the whole pipeline (replan, calendar push,
+long-term memory refresh, notifications) once per user, with
+db.info["user_id"] set by hand for that iteration. The Sunday ML
+retrain is a schema-level exception: ml/trainer.py trains one global
+regressor from whichever user's session happens to be active when it's
+called, which only makes sense once per night, not once per user --
+see the note at its call site below.
 """
 
 from __future__ import annotations
@@ -33,7 +43,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-from backend.database import SessionLocal
+from backend.database import SessionLocal, owner_id
 from backend.ai import long_term_memory
 from backend.integrations.google_calendar import GoogleCalendarError
 from backend.models.calendar_event import CalendarEvent
@@ -41,6 +51,7 @@ from backend.models.metrics import ProductivityMetric
 from backend.models.enums import EventSource, TaskStatus
 from backend.models.task import Task
 from backend.models.settings import Setting
+from backend.models.user import User
 from backend.services import (
     calendar_sync_service,
     deadline_service,
@@ -92,7 +103,7 @@ def _today_metrics(db, today: date, now: datetime) -> ProductivityMetric:
 
     metric = db.query(ProductivityMetric).filter(ProductivityMetric.date == today).first()
     if metric is None:
-        metric = ProductivityMetric(date=today)
+        metric = ProductivityMetric(user_id=owner_id(db), date=today)
         db.add(metric)
 
     metric.hours_worked = round(hours_worked, 2)
@@ -112,37 +123,110 @@ def _today_metrics(db, today: date, now: datetime) -> ProductivityMetric:
     return metric
 
 
+def _run_nightly_job_for_user(db, today: date, now: datetime) -> dict:
+    """The full per-user pipeline (everything except the Sunday ML
+    retrain, which trains one shared model across every user's history
+    -- see run_nightly_job()), run against a session already scoped
+    (db.info["user_id"] set) to exactly one user."""
+    metric = _today_metrics(db, today, now)
+    replan_result = deadline_service.replan(db)
+
+    try:
+        calendar_push = calendar_sync_service.push_pending_sessions(db)
+        calendar_sync_result = {"pushed": calendar_push[0], "errors": calendar_push[1]}
+    except GoogleCalendarError as exc:
+        logger.info("Nightly job: Google Calendar push skipped (%s)", exc)
+        calendar_sync_result = {"pushed": 0, "errors": [str(exc)]}
+
+    # Long-Term Memory (PRD §63) refresh -- recomputes preferred hours,
+    # estimation bias, and recent project history from tonight's fully
+    # up-to-date data. Wrapped: a bug here shouldn't take down
+    # replan/calendar sync, which matter more.
+    try:
+        long_term_memory.refresh_profile(db)
+    except Exception as exc:  # noqa: BLE001 - see comment above
+        logger.warning("Nightly job: long-term memory refresh failed (%s)", exc)
+
+    summary = {
+        "generated_at": now.isoformat(),
+        "tasks_completed_today": metric.tasks_completed,
+        "tasks_planned_today": metric.tasks_planned,
+        "hours_worked_today": metric.hours_worked,
+        "rescheduled_count": replan_result["rescheduled_count"],
+        "demoted_count": len(replan_result["demoted_tasks"]),
+        "at_risk_count": len(replan_result["at_risk_tasks"]),
+        "calendar_sync": calendar_sync_result,
+        "notifications": notification_service.generate_notifications(db, now),
+    }
+
+    setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()
+    if setting is None:
+        setting = Setting(user_id=owner_id(db), key=_SETTINGS_KEY, value=json.dumps(summary))
+        db.add(setting)
+    else:
+        setting.value = json.dumps(summary)
+    db.commit()
+
+    logger.info(
+        "Nightly job (user %s): %d completed today, %d rescheduled, %d at risk",
+        db.info.get("user_id"),
+        summary["tasks_completed_today"],
+        summary["rescheduled_count"],
+        summary["at_risk_count"],
+    )
+    return summary
+
+
 def run_nightly_job() -> dict:
-    """Entry point registered with APScheduler in app.py. Owns its own DB session."""
+    """
+    Entry point registered with APScheduler in app.py. Owns its own DB
+    session, loops over every active user running the per-user pipeline
+    with tenant filtering turned on for that iteration, then -- once,
+    outside the loop, on Sundays -- retrains ml/estimator.py's
+    regressor across every user's resolved Predictions combined.
+
+    That retrain is deliberately the one piece of this job that stays
+    unscoped (no db.info["user_id"] set for it): ml/trainer.py persists
+    a single MODELS_DIR/estimator.pkl that ml/estimator.py's whole
+    process loads regardless of which user is being served, so training
+    it per-user would just mean whichever user happened to run last in
+    the loop silently overwrote the shared model with only their own
+    (usually much smaller) history. Training the one shared duration-
+    prediction model on the pooled feature set (importance/energy/
+    has_project/has_deadline -- no task titles or other identifying
+    content, see ml/trainer.py's feature engineering) isn't a privacy
+    regression the way pooling raw task data across users' *reads*
+    would be; it only ever comes back out as a number, never as
+    another user's task content.
+
+    Returns {"users": {user_id: summary}, "ml_retrain": {...}}. A
+    user's per-user run failing is logged and recorded as
+    {"error": str(exc)} rather than aborting everyone else's night.
+    """
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
         today = now.date()
 
-        metric = _today_metrics(db, today, now)
-        replan_result = deadline_service.replan(db)
+        user_ids = [row[0] for row in db.query(User.id).filter(User.is_active.is_(True)).all()]
 
-        try:
-            calendar_push = calendar_sync_service.push_pending_sessions(db)
-            calendar_sync_result = {"pushed": calendar_push[0], "errors": calendar_push[1]}
-        except GoogleCalendarError as exc:
-            logger.info("Nightly job: Google Calendar push skipped (%s)", exc)
-            calendar_sync_result = {"pushed": 0, "errors": [str(exc)]}
+        user_results: dict = {}
+        for user_id in user_ids:
+            db.info["user_id"] = user_id
+            try:
+                user_results[user_id] = _run_nightly_job_for_user(db, today, now)
+            except Exception as exc:  # noqa: BLE001 - one user's bug shouldn't skip everyone else's nightly job
+                db.rollback()
+                logger.exception("Nightly job failed for user %d", user_id)
+                user_results[user_id] = {"error": str(exc)}
+            finally:
+                db.info.pop("user_id", None)
 
-        # Long-Term Memory (PRD §63) refresh -- recomputes preferred hours,
-        # estimation bias, and recent project history from tonight's fully
-        # up-to-date data. Wrapped like the ML retrain below: a bug here
-        # shouldn't take down replan/calendar sync, which matter more.
-        try:
-            long_term_memory.refresh_profile(db)
-        except Exception as exc:  # noqa: BLE001 - see comment above
-            logger.warning("Nightly job: long-term memory refresh failed (%s)", exc)
-
-        # Weekly (Sunday) retrain of ml/estimator.py's regressor. Wrapped
-        # broadly -- sklearn/joblib issues (missing optional dep, a
-        # corrupt models/ dir, low disk space) shouldn't take down the
-        # rest of the nightly job, which is the part with actual
-        # user-facing consequences (replan, calendar sync).
+        # Weekly (Sunday) retrain -- see docstring above for why this runs
+        # once, unscoped, after every user's own pipeline has finished.
+        # Wrapped broadly: sklearn/joblib issues (missing optional dep, a
+        # corrupt models/ dir, low disk space) shouldn't take down a run
+        # that already succeeded for every user above.
         ml_retrain_result: dict = {"ran": False}
         if today.weekday() == 6:  # Sunday
             try:
@@ -153,34 +237,7 @@ def run_nightly_job() -> dict:
                 logger.warning("Nightly job: estimator retrain failed (%s)", exc)
                 ml_retrain_result = {"ran": True, "trained": False, "reason": str(exc)}
 
-        summary = {
-            "generated_at": now.isoformat(),
-            "tasks_completed_today": metric.tasks_completed,
-            "tasks_planned_today": metric.tasks_planned,
-            "hours_worked_today": metric.hours_worked,
-            "rescheduled_count": replan_result["rescheduled_count"],
-            "demoted_count": len(replan_result["demoted_tasks"]),
-            "at_risk_count": len(replan_result["at_risk_tasks"]),
-            "calendar_sync": calendar_sync_result,
-            "ml_retrain": ml_retrain_result,
-            "notifications": notification_service.generate_notifications(db, now),
-        }
-
-        setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()
-        if setting is None:
-            setting = Setting(key=_SETTINGS_KEY, value=json.dumps(summary))
-            db.add(setting)
-        else:
-            setting.value = json.dumps(summary)
-        db.commit()
-
-        logger.info(
-            "Nightly job: %d completed today, %d rescheduled, %d at risk",
-            summary["tasks_completed_today"],
-            summary["rescheduled_count"],
-            summary["at_risk_count"],
-        )
-        return summary
+        return {"users": user_results, "ml_retrain": ml_retrain_result}
     finally:
         db.close()
 

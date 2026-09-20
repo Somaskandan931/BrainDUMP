@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from backend.database import owner_id
 from backend.ml import calibration, estimator
 from backend.ml.calibration import LOOKBACK_DAYS, MAX_ADJUSTMENT_PCT, MIN_SAMPLES, Calibration
 from backend.models.enums import Importance
@@ -62,7 +63,7 @@ def test_history_outside_lookback_window_is_ignored(db):
 def test_unresolved_predictions_do_not_count(db):
     anchor = make_task(db, "anchor")
     for _ in range(MIN_SAMPLES + 2):
-        db.add(Prediction(task_id=anchor.id, category="high", predicted_hours=2.0))
+        db.add(Prediction(user_id=owner_id(db), task_id=anchor.id, category="high", predicted_hours=2.0))
     db.commit()
     assert calibration.get_calibration(db, "high") is None
 
@@ -167,7 +168,7 @@ def test_user_supplied_estimate_is_never_overwritten(db):
 def test_resolving_a_prediction_backfills_error_pct(db):
     project = make_project(db)
     task = make_task(db, project=project, estimated_hours=2.0, confidence_score=0.5)
-    db.add(Prediction(task_id=task.id, category=str(project.id), predicted_hours=2.0))
+    db.add(Prediction(user_id=owner_id(db), task_id=task.id, category=str(project.id), predicted_hours=2.0))
     db.commit()
 
     task.actual_hours = 3.0

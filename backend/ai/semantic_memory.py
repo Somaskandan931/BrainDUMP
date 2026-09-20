@@ -42,6 +42,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.models.dependency import Dependency
 from backend.models.enums import SemanticRelationType
 from backend.models.memory import SemanticMemory
@@ -84,6 +85,7 @@ def record_relation(
         return existing
 
     relation = SemanticMemory(
+        user_id=owner_id(db),
         relation_type=relation_type,
         title=title,
         summary=summary,

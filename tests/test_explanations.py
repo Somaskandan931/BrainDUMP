@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import pytest
 
+from backend.database import owner_id
 from backend.ai import episodic_memory
 from backend.models.dependency import Dependency
 from backend.models.enums import EpisodicEventType, Importance
@@ -60,7 +61,7 @@ def test_overdue_task_is_called_out(client, db):
 def test_explanation_counts_tasks_it_unblocks(client, db):
     blocker = make_task(db, "blocker", importance=Importance.CRITICAL, deadline_in_days=1, estimated_hours=1)
     waiting = make_task(db, "waiting", importance=Importance.LOW, estimated_hours=1)
-    db.add(Dependency(task_id=waiting.id, depends_on_task_id=blocker.id))
+    db.add(Dependency(user_id=owner_id(db), task_id=waiting.id, depends_on_task_id=blocker.id))
     db.commit()
 
     explanation = client.get("/api/planner/next-task/explain").json()["explanation"]

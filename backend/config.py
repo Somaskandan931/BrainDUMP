@@ -37,31 +37,72 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 SQL_ECHO = False
 
 # ---------------------------------------------------------------------------
-# AI / LLM (Milestone 4 — originally local Ollama; swapped to OpenRouter's
-# hosted free tier so inference doesn't depend on a machine staying on and
-# a tunnel running — see backend/ai/ollama_client.py)
+# Auth (multi-user)
 # ---------------------------------------------------------------------------
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-# A ":free"-suffixed model slug. If OpenRouter retires this particular free
-# model, swap it via the OPENROUTER_MODEL env var — no code change needed.
-# Browse current free options at https://openrouter.ai/models?max_price=0
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+# HMAC secret JWTs are signed with. Must be set in .env for anything beyond
+# local dev — a default is provided only so the app boots without one, not
+# because it's safe to run with it.
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-insecure-secret-change-me")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
+
+# Web application OAuth client id from Google Cloud Console — separate from
+# whatever Web-application client GOOGLE_CALENDAR_CLIENT_ID below uses for
+# Calendar sync. Used to verify the ID token Google Identity Services hands
+# the frontend (see auth/google_login.py). Empty disables Google login.
+GOOGLE_LOGIN_CLIENT_ID = os.getenv("GOOGLE_LOGIN_CLIENT_ID", "")
+
+# Brute-force limits on /api/auth/* (auth/rate_limit.py; in-memory, per process).
+# Login failures are counted per (client IP, email) and, more loosely, per client
+# IP alone; registrations and Google sign-ins per client IP.
+AUTH_LOGIN_MAX_FAILURES = int(os.getenv("AUTH_LOGIN_MAX_FAILURES", "5"))
+AUTH_LOGIN_IP_MAX_FAILURES = int(os.getenv("AUTH_LOGIN_IP_MAX_FAILURES", "20"))
+AUTH_LOGIN_WINDOW_SECONDS = int(os.getenv("AUTH_LOGIN_WINDOW_SECONDS", "900"))  # 15 min
+AUTH_REGISTER_MAX_PER_IP = int(os.getenv("AUTH_REGISTER_MAX_PER_IP", "10"))
+AUTH_REGISTER_WINDOW_SECONDS = int(os.getenv("AUTH_REGISTER_WINDOW_SECONDS", "3600"))  # 1 hour
 
 # ---------------------------------------------------------------------------
-# Calendar (Milestone 6)
+# AI / Ollama (placeholder — filled in Milestone 4)
 # ---------------------------------------------------------------------------
-# OAuth client secret downloaded from Google Cloud Console (Desktop app
-# credential type). Never committed — see .env / INTEGRATIONS.md
-# for the one-time setup steps.
-# Overridable so a hosting platform's "secret file" feature (e.g. Render)
-# can mount these somewhere other than the repo root.
-GOOGLE_CREDENTIALS_PATH = Path(os.getenv("GOOGLE_CREDENTIALS_PATH", str(BASE_DIR / "credentials.json")))
-# Written automatically on first successful OAuth flow; holds the refresh
-# token so later runs never need the browser consent screen again.
-GOOGLE_TOKEN_PATH = Path(os.getenv("GOOGLE_TOKEN_PATH", str(BASE_DIR / "token.json")))
+OLLAMA_HOST = "http://localhost:11434"
+OLLAMA_MODEL = "qwen3:8b"
+
+# ---------------------------------------------------------------------------
+# Calendar (Milestone 6; per-user OAuth as of the multi-user auth refactor)
+# ---------------------------------------------------------------------------
+# Web application OAuth client (Google Cloud Console -> Credentials ->
+# Create Credentials -> OAuth client ID -> Web application). Separate from
+# GOOGLE_LOGIN_CLIENT_ID above -- that one only verifies Google Sign-In ID
+# tokens; this one is a full OAuth client with a secret, used to request
+# offline (refresh-token-bearing) Calendar access for whichever user
+# connects their calendar from Settings. Empty disables the feature (every
+# calendar endpoint 424s with setup instructions, same as before).
+GOOGLE_CALENDAR_CLIENT_ID = os.getenv("GOOGLE_CALENDAR_CLIENT_ID", "")
+GOOGLE_CALENDAR_CLIENT_SECRET = os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET", "")
+# Must exactly match a redirect URI registered on that OAuth client, and
+# point at api/calendar.py's GET /google/callback route.
+GOOGLE_CALENDAR_REDIRECT_URI = os.getenv(
+    "GOOGLE_CALENDAR_REDIRECT_URI", "http://localhost:8000/api/calendar/google/callback"
+)
 GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
-GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+GOOGLE_CALENDAR_SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
+
+# Where the OAuth callback sends the browser once it's done (it appends
+# ?calendar=connected or ?calendar=error). The callback is hit by Google's
+# redirect, not by the SPA, so it has to bounce the user back explicitly.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# Fernet key used to encrypt each user's stored Google refresh token at
+# rest (services/integration_credentials_service.py).
+# Generate one with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Unset = tokens are stored as plaintext in the settings table (fine for a
+# throwaway local dev DB; set it for anything real).
+INTEGRATION_ENCRYPTION_KEY = os.getenv("INTEGRATION_ENCRYPTION_KEY", "")
 
 # How far back "sync" also re-checks for stale/removed events, in addition
 # to config.SCHEDULING_HORIZON_DAYS ahead (reused as-is for the forward

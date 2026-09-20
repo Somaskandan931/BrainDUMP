@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { TimeBlockRow } from "@/components/settings/TimeBlockRow";
 import { AddTimeBlockForm } from "@/components/settings/AddTimeBlockForm";
 import { DemoWorkspaceCard } from "@/components/settings/DemoWorkspaceCard";
+import { GoogleCalendarCard } from "@/components/settings/GoogleCalendarCard";
 import { useSettings, useTimeBlocks } from "@/hooks/useSettings";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { BASE_URL } from "@/services/api";
@@ -240,6 +241,7 @@ export default function SettingsPage() {
         <AppearanceSection />
         <AvailableHoursSection />
         <TimeBlocksSection />
+        <GoogleCalendarCard />
         <DemoWorkspaceCard />
 
         <Card>

@@ -1,0 +1,16 @@
+# Secrets — never commit these
+.env
+backend/credentials.json
+backend/token.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Local data (SQLite db, logs)
+backend/data/
+backend/logs/
+
+# Frontend has its own .gitignore (node_modules, .next, .env.local)

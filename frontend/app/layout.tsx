@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { Providers } from "./providers";
 import { THEME_INIT_SCRIPT } from "@/components/theme/ThemeProvider";
 
@@ -34,8 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="flex h-screen overflow-hidden bg-base font-body text-ink">
         <Providers>
-          <Sidebar />
-          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">{children}</div>
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

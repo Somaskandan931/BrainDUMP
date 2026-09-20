@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
 from backend.schemas.notification import NotificationsResponse
 from backend.services import notification_service
 
@@ -23,5 +23,5 @@ router = APIRouter()
 
 
 @router.get("/", response_model=NotificationsResponse)
-def list_notifications(db: Session = Depends(get_db)) -> dict:
+def list_notifications(db: Session = Depends(get_scoped_db)) -> dict:
     return {"notifications": notification_service.generate_notifications(db)}

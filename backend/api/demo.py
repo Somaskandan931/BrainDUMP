@@ -13,17 +13,17 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
 from backend.services import demo_service
 
 router = APIRouter()
 
 
 @router.post("/seed")
-def seed_demo_workspace(db: Session = Depends(get_db)) -> dict:
+def seed_demo_workspace(db: Session = Depends(get_scoped_db)) -> dict:
     return demo_service.seed_demo_workspace(db)
 
 
 @router.post("/reset")
-def reset_demo_workspace(db: Session = Depends(get_db)) -> dict:
+def reset_demo_workspace(db: Session = Depends(get_scoped_db)) -> dict:
     return demo_service.reset_demo_workspace(db)

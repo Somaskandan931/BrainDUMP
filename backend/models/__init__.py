@@ -4,6 +4,7 @@ populated wherever this package is imported (database.init_db() relies
 on this).
 """
 
+from backend.models.user import User
 from backend.models.project import Project
 from backend.models.task import Task, Subtask
 from backend.models.dependency import Dependency
@@ -16,6 +17,7 @@ from backend.models.memory import EpisodicMemory, SemanticMemory
 from backend.models.daily_plan import DailyPlan
 
 __all__ = [
+    "User",
     "Project",
     "Task",
     "Subtask",

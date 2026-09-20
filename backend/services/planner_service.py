@@ -34,6 +34,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.ai.ollama_client import call_model_json
 from backend.ai.prompts import TASK_BREAKDOWN_SYSTEM, build_goal_breakdown_prompt
 from backend.models.dependency import Dependency
@@ -87,6 +88,7 @@ def generate_from_goal(db: Session, goal_text: str) -> Tuple[Project, List[Task]
 
     project_name = (result.get("project_name") or "").strip() or goal_text.strip()[:200]
     project = Project(
+        user_id=owner_id(db),
         name=project_name[:200],
         description=result.get("project_description") or None,
         goal_text=goal_text.strip(),
@@ -125,6 +127,7 @@ def generate_from_goal(db: Session, goal_text: str) -> Tuple[Project, List[Task]
         )
 
         task = Task(
+            user_id=owner_id(db),
             project_id=project.id,
             title=title[:300],
             description=item.get("description") or None,
@@ -177,6 +180,7 @@ def _record_sequential_dependencies(
         if prev_order is not None and curr_order is not None and curr_order > prev_order:
             db.add(
                 Dependency(
+                    user_id=owner_id(db),
                     task_id=created_tasks[i].id,
                     depends_on_task_id=created_tasks[i - 1].id,
                 )

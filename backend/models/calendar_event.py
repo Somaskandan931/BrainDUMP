@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, DateTime, Boolean
+from sqlalchemy import ForeignKey, String, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -29,8 +29,17 @@ if TYPE_CHECKING:
 
 class CalendarEvent(Base, TimestampMixin):
     __tablename__ = "calendar_events"
+    # Unique per user, not globally: Google gives an invited event the same
+    # id in every attendee's calendar, so two Brain Dump users sharing a
+    # meeting would otherwise collide when the second one syncs.
+    __table_args__ = (
+        UniqueConstraint("user_id", "google_event_id", name="uq_calendar_events_user_google_event"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     # Null for events not tied to a Brain Dump task (e.g. imported "College" block).
     task_id: Mapped[Optional[int]] = mapped_column(
@@ -38,8 +47,9 @@ class CalendarEvent(Base, TimestampMixin):
     )
 
     # External Google Calendar event id — used to reconcile on sync. Unique
-    # when present; null for events that haven't been pushed/pulled yet.
-    google_event_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    # per user when present (see __table_args__); null for events that
+    # haven't been pushed/pulled yet.
+    google_event_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

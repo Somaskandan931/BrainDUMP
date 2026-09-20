@@ -26,6 +26,7 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.models.settings import Setting
 from backend.schemas.user_settings import TimeBlockCreate, TimeBlockRead, UserSettingsRead, UserSettingsUpdate
 
@@ -53,7 +54,7 @@ def update_settings(db: Session, payload: UserSettingsUpdate) -> UserSettingsRea
 
     row = db.query(Setting).filter(Setting.key == _PROFILE_KEY).first()
     if row is None:
-        row = Setting(key=_PROFILE_KEY, value=merged.model_dump_json())
+        row = Setting(user_id=owner_id(db), key=_PROFILE_KEY, value=merged.model_dump_json())
         db.add(row)
     else:
         row.value = merged.model_dump_json()
@@ -78,7 +79,7 @@ def _load_time_blocks(db: Session) -> List[dict]:
 def _save_time_blocks(db: Session, blocks: List[dict]) -> None:
     row = db.query(Setting).filter(Setting.key == _TIME_BLOCKS_KEY).first()
     if row is None:
-        row = Setting(key=_TIME_BLOCKS_KEY, value=json.dumps(blocks))
+        row = Setting(user_id=owner_id(db), key=_TIME_BLOCKS_KEY, value=json.dumps(blocks))
         db.add(row)
     else:
         row.value = json.dumps(blocks)

@@ -4,17 +4,25 @@ integrations/todoist.py — Todoist API wrapper.
 Milestone 6 implementation, built on Todoist's REST API v2 (a personal
 API token is enough — no OAuth app registration needed, unlike Google
 Calendar). Responsibilities:
-- Auth via personal API token (local .env, see config.TODOIST_API_TOKEN)
 - push_task(task) -> create a Todoist item from a Brain Dump Task
 - pull_tasks() -> list active Todoist items for two-way sync
 - close_task() / delete_task() to keep both sides reconciled once a task
   is completed or removed
 
-Every function can raise TodoistNotConfigured (no API token set — a
-one-time local setup step) or the more general TodoistError (the HTTP
-call itself failed). services/todoist_sync_service.py is the only
-caller and treats both the way calendar_sync_service treats Google's
-errors: log and continue rather than crash the sync.
+Multi-user auth follow-up: every function now takes the caller's own
+`api_token` explicitly rather than reading a single shared
+config.TODOIST_API_TOKEN — each user pastes their own personal token
+into Settings, stored per-user via
+services/integration_credentials_service.get_todoist_token() and
+passed in here by services/todoist_sync_service.py. This module itself
+still knows nothing about users or the database — same separation of
+concerns as google_calendar.py post-refactor.
+
+Every function can raise TodoistNotConfigured (no token passed — this
+user hasn't connected Todoist yet) or the more general TodoistError
+(the HTTP call itself failed). services/todoist_sync_service.py is the
+only caller and treats both the way calendar_sync_service treats
+Google's errors: log and continue rather than crash the sync.
 """
 
 from __future__ import annotations
@@ -62,23 +70,25 @@ _IMPORTANCE_TO_TODOIST_PRIORITY = {
 _TODOIST_PRIORITY_TO_IMPORTANCE = {v: k for k, v in _IMPORTANCE_TO_TODOIST_PRIORITY.items()}
 
 
-def _headers() -> Dict[str, str]:
-    if not config.TODOIST_API_TOKEN:
+def _headers(api_token: Optional[str]) -> Dict[str, str]:
+    if not api_token:
         raise TodoistNotConfigured(
-            "TODOIST_API_TOKEN is not set. Generate a personal token at "
-            "Todoist -> Settings -> Integrations -> Developer, then add "
-            "TODOIST_API_TOKEN=... to ai_os/.env. See INTEGRATIONS.md."
+            "This account hasn't connected Todoist yet. Generate a personal token at "
+            "Todoist -> Settings -> Integrations -> Developer, then paste it into "
+            "Brain Dump's Settings page. See INTEGRATIONS.md."
         )
     return {
-        "Authorization": f"Bearer {config.TODOIST_API_TOKEN}",
+        "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json",
     }
 
 
-def _request(method: str, path: str, *, json: Optional[dict] = None, action: str) -> requests.Response:
+def _request(
+    method: str, path: str, *, api_token: Optional[str], json: Optional[dict] = None, action: str
+) -> requests.Response:
     url = f"{config.TODOIST_API_BASE_URL}{path}"
     try:
-        response = requests.request(method, url, headers=_headers(), json=json, timeout=10)
+        response = requests.request(method, url, headers=_headers(api_token), json=json, timeout=10)
     except requests.RequestException as exc:
         raise TodoistError(f"Todoist API request failed during {action}: {exc}") from exc
 
@@ -111,9 +121,9 @@ def priority_to_importance(priority: int) -> Importance:
     return _TODOIST_PRIORITY_TO_IMPORTANCE.get(priority, Importance.MEDIUM)
 
 
-def pull_tasks() -> List[RemoteTask]:
+def pull_tasks(api_token: Optional[str]) -> List[RemoteTask]:
     """All active (not completed) items from Todoist."""
-    response = _request("GET", "/tasks", action="pull_tasks")
+    response = _request("GET", "/tasks", api_token=api_token, action="pull_tasks")
     items = response.json()
     return [
         RemoteTask(
@@ -129,6 +139,7 @@ def pull_tasks() -> List[RemoteTask]:
 def push_task(
     title: str,
     *,
+    api_token: Optional[str],
     due_date: Optional[datetime] = None,
     priority: int = 2,
     description: Optional[str] = None,
@@ -143,7 +154,7 @@ def push_task(
         # Todoist's due_date field expects exactly this YYYY-MM-DD form.
         body["due_date"] = due_date.date().isoformat()
 
-    response = _request("POST", "/tasks", json=body, action="push_task")
+    response = _request("POST", "/tasks", api_token=api_token, json=body, action="push_task")
     item = response.json()
     return RemoteTask(
         todoist_id=str(item["id"]),
@@ -156,6 +167,7 @@ def push_task(
 def update_task(
     todoist_id: str,
     *,
+    api_token: Optional[str],
     title: Optional[str] = None,
     due_date: Optional[datetime] = None,
     priority: Optional[int] = None,
@@ -169,10 +181,10 @@ def update_task(
         body["priority"] = priority
     if not body:
         return
-    _request("POST", f"/tasks/{todoist_id}", json=body, action="update_task")
+    _request("POST", f"/tasks/{todoist_id}", api_token=api_token, json=body, action="update_task")
 
 
-def close_task(todoist_id: str) -> None:
+def close_task(todoist_id: str, *, api_token: Optional[str]) -> None:
     """
     Mark a Todoist item complete. A 404 here means it's already gone
     (closed/deleted directly in Todoist) — treated as success since the
@@ -180,7 +192,7 @@ def close_task(todoist_id: str) -> None:
     """
     url = f"{config.TODOIST_API_BASE_URL}/tasks/{todoist_id}/close"
     try:
-        response = requests.post(url, headers=_headers(), timeout=10)
+        response = requests.post(url, headers=_headers(api_token), timeout=10)
     except requests.RequestException as exc:
         raise TodoistError(f"Todoist API request failed during close_task: {exc}") from exc
     if response.status_code == 404:
@@ -189,11 +201,11 @@ def close_task(todoist_id: str) -> None:
         raise TodoistError(f"Todoist API returned {response.status_code} during close_task: {response.text[:300]}")
 
 
-def delete_task(todoist_id: str) -> None:
+def delete_task(todoist_id: str, *, api_token: Optional[str]) -> None:
     """Delete a Todoist item outright. 404 treated as already-deleted success."""
     url = f"{config.TODOIST_API_BASE_URL}/tasks/{todoist_id}"
     try:
-        response = requests.delete(url, headers=_headers(), timeout=10)
+        response = requests.delete(url, headers=_headers(api_token), timeout=10)
     except requests.RequestException as exc:
         raise TodoistError(f"Todoist API request failed during delete_task: {exc}") from exc
     if response.status_code == 404:

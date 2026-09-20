@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.ai.ollama_client import OllamaError
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
 from backend.schemas.planner import (
     BrainDumpRequest,
     BrainDumpResponse,
@@ -42,7 +42,7 @@ router = APIRouter()
 
 
 @router.post("/brain-dump", response_model=BrainDumpResponse)
-def submit_brain_dump(payload: BrainDumpRequest, db: Session = Depends(get_db)) -> BrainDumpResponse:
+def submit_brain_dump(payload: BrainDumpRequest, db: Session = Depends(get_scoped_db)) -> BrainDumpResponse:
     """Submit raw brain-dump text -> parsed projects/tasks via the Task Parser agent."""
     try:
         projects, tasks = parse_brain_dump(db, payload.text)
@@ -56,7 +56,7 @@ def submit_brain_dump(payload: BrainDumpRequest, db: Session = Depends(get_db)) 
 
 
 @router.post("/goal", response_model=GoalResponse)
-def submit_goal(payload: GoalRequest, db: Session = Depends(get_db)) -> GoalResponse:
+def submit_goal(payload: GoalRequest, db: Session = Depends(get_scoped_db)) -> GoalResponse:
     """Submit a high-level goal -> generated project + task roadmap via the Goal Breakdown agent."""
     try:
         project, tasks = generate_from_goal(db, payload.goal_text)
@@ -70,7 +70,7 @@ def submit_goal(payload: GoalRequest, db: Session = Depends(get_db)) -> GoalResp
 
 
 @router.get("/next-task", response_model=NextTaskResponse)
-def get_next_task_endpoint(db: Session = Depends(get_db)) -> NextTaskResponse:
+def get_next_task_endpoint(db: Session = Depends(get_scoped_db)) -> NextTaskResponse:
     """
     The single 'Do Next' task, per ml/priority_model.py's composite
     score. Returns {"task": null} rather than a 404 when nothing's
@@ -82,7 +82,7 @@ def get_next_task_endpoint(db: Session = Depends(get_db)) -> NextTaskResponse:
 
 
 @router.get("/next-task/explain")
-def explain_next_task_endpoint(db: Session = Depends(get_db)) -> dict:
+def explain_next_task_endpoint(db: Session = Depends(get_scoped_db)) -> dict:
     """
     'Why this task?' — the priority-score breakdown (deadline pressure,
     importance, energy fit, context-switch cost, dependency unlocks)
@@ -94,7 +94,7 @@ def explain_next_task_endpoint(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/today", response_model=DailySummaryResponse)
-def get_daily_summary_endpoint(db: Session = Depends(get_db)) -> DailySummaryResponse:
+def get_daily_summary_endpoint(db: Session = Depends(get_scoped_db)) -> DailySummaryResponse:
     """
     The dashboard's Hero Section payload (PRD §37): today's scheduled
     session count, the "do next" task, any at-risk notifications, and a
@@ -108,7 +108,7 @@ def get_daily_summary_endpoint(db: Session = Depends(get_db)) -> DailySummaryRes
 
 
 @router.post("/replan", response_model=ReplanResponse)
-def replan_endpoint(db: Session = Depends(get_db)) -> ReplanResponse:
+def replan_endpoint(db: Session = Depends(get_scoped_db)) -> ReplanResponse:
     """
     Trigger dynamic replanning: detect at-risk tasks, demote low/medium
     importance ones that are at risk (buy them runway), then wipe and
@@ -120,7 +120,7 @@ def replan_endpoint(db: Session = Depends(get_db)) -> ReplanResponse:
 
 
 @router.get("/replan/explain")
-def explain_last_replan_endpoint(db: Session = Depends(get_db)) -> dict:
+def explain_last_replan_endpoint(db: Session = Depends(get_scoped_db)) -> dict:
     """
     'Why did my schedule change?' — a plain-language narrative for the
     most recent replan (nightly or manual), built from the episodic

@@ -15,11 +15,11 @@ Two operations, both idempotent for a given calendar date:
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.models.daily_plan import DailyPlan
 from backend.schemas.schedule import BUFFER_MULTIPLIERS
 
@@ -58,7 +58,7 @@ def start_day(db: Session, buffer_multiplier: float) -> DailyPlan:
         return plan
 
     if plan is None:
-        plan = DailyPlan(plan_date=today, buffer_multiplier=buffer_multiplier)
+        plan = DailyPlan(user_id=owner_id(db), plan_date=today, buffer_multiplier=buffer_multiplier)
         db.add(plan)
     else:
         plan.buffer_multiplier = buffer_multiplier

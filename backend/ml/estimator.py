@@ -39,6 +39,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend import config
 from backend.ml import calibration
 from backend.models.enums import Importance
@@ -208,6 +209,7 @@ def ensure_estimate(db: Session, task: Task, *, log: bool = True) -> Task:
         if log:
             db.add(
                 Prediction(
+                    user_id=owner_id(db),
                     task_id=task.id,
                     category=calibration.resolve_category(task),
                     predicted_hours=task.estimated_hours,

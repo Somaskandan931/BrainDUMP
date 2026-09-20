@@ -12,6 +12,8 @@
 
 import {
   ApiError,
+  AuthResponse,
+  AuthUser,
   BrainDumpResponse,
   CalendarEvent,
   CalendarSyncResponse,
@@ -29,6 +31,8 @@ import {
   ExecutionScoreResponse,
   ExecutionScoreTrendResponse,
   GoalResponse,
+  GoogleCalendarStatus,
+  GoogleConnectResponse,
   LongTermProfileResponse,
   NextTaskExplanationResponse,
   NextTaskResponse,
@@ -57,16 +61,47 @@ import {
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
 
+// --- Auth token storage -----------------------------------------------------
+// A plain localStorage string, not a cookie: this is a local-first app with
+// no server-rendered authenticated pages, so there's nothing that needs the
+// token available server-side. lib/auth.tsx is the only other place that
+// reads/writes this key directly.
+const TOKEN_KEY = "brain_dump_token";
+const AUTH_EVENT = "brain-dump-auth-cleared";
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string): void {
+  window.localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  window.localStorage.removeItem(TOKEN_KEY);
+  // lib/auth.tsx listens for this so a 401 anywhere (not just from an
+  // explicit logout click) immediately drops the user back to /login.
+  window.dispatchEvent(new Event(AUTH_EVENT));
+}
+
+export function onAuthCleared(handler: () => void): () => void {
+  window.addEventListener(AUTH_EVENT, handler);
+  return () => window.removeEventListener(AUTH_EVENT, handler);
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const token = getToken();
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
       cache: "no-store",
@@ -78,6 +113,10 @@ async function request<T>(
         BASE_URL +
         "?"
     );
+  }
+
+  if (res.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/register") {
+    clearToken();
   }
 
   if (res.status === 204) {
@@ -108,6 +147,18 @@ const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 
 export const healthApi = {
   check: () => get<{ status: string }>("/health"),
+};
+
+// --- Auth ---------------------------------------------------------------
+
+export const authApi = {
+  register: (data: { email: string; password: string; name?: string }) =>
+    post<AuthResponse>("/api/auth/register", data),
+  login: (data: { email: string; password: string }) =>
+    post<AuthResponse>("/api/auth/login", data),
+  loginWithGoogle: (idToken: string) =>
+    post<AuthResponse>("/api/auth/google", { id_token: idToken }),
+  me: () => get<AuthUser>("/api/auth/me"),
 };
 
 // --- Projects ---------------------------------------------------------------
@@ -178,6 +229,13 @@ export const calendarApi = {
   sync: () => post<CalendarSyncResponse>("/api/calendar/sync"),
   createSession: (data: { task_id: number; start_time: string; end_time: string }) =>
     post<CalendarEvent>("/api/calendar/create-session", data),
+  // Per-user Google connection (backend/api/calendar.py). `googleConnect` is a
+  // fetch with the bearer token rather than a plain link, because the browser
+  // can't attach an Authorization header to a navigation; the caller then sends
+  // the browser to the returned URL.
+  googleStatus: () => get<GoogleCalendarStatus>("/api/calendar/google/status"),
+  googleConnect: () => get<GoogleConnectResponse>("/api/calendar/google/connect"),
+  googleDisconnect: () => del<void>("/api/calendar/google"),
 };
 
 // --- Schedule (Today dashboard "Start your day" lock, backend/api/schedule.py) -

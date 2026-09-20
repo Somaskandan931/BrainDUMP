@@ -27,6 +27,9 @@ class WorkSession(Base, TimestampMixin):
     __tablename__ = "work_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
 
     # Optional link back to the calendar block this session was scheduled in.

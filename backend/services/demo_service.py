@@ -28,6 +28,7 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.models.dependency import Dependency
 from backend.models.enums import Importance, TaskStatus
 from backend.models.metrics import ProductivityMetric
@@ -94,6 +95,7 @@ def _make_completed_task(
     actual = round(max(0.25, base_estimate * (1 + bias + rng.uniform(-0.08, 0.08))), 2)
 
     task = Task(
+        user_id=owner_id(db),
         project_id=project.id,
         title=title,
         status=TaskStatus.COMPLETED,
@@ -109,6 +111,7 @@ def _make_completed_task(
     error_pct = round((actual - base_estimate) / base_estimate * 100, 2)
     db.add(
         Prediction(
+            user_id=owner_id(db),
             task_id=task.id,
             category=str(project.id),
             predicted_hours=base_estimate,
@@ -119,6 +122,7 @@ def _make_completed_task(
     )
     db.add(
         WorkSession(
+            user_id=owner_id(db),
             task_id=task.id,
             start_time=completed_at - timedelta(hours=actual),
             end_time=completed_at,
@@ -151,6 +155,7 @@ def seed_demo_workspace(db: Session) -> dict:
 
     for name, importance, bias in _DEMO_PROJECTS:
         project = Project(
+            user_id=owner_id(db),
             name=f"{DEMO_PREFIX} {name}",
             description=DEMO_DESCRIPTION,
         )
@@ -177,6 +182,7 @@ def seed_demo_workspace(db: Session) -> dict:
         # real dependency edge — not just historical data.
         for title in pending_titles:
             pending = Task(
+                user_id=owner_id(db),
                 project_id=project.id,
                 title=title,
                 status=TaskStatus.PENDING,
@@ -187,7 +193,7 @@ def seed_demo_workspace(db: Session) -> dict:
             db.flush()
             tasks_pending += 1
             if previous_task is not None:
-                db.add(Dependency(task_id=pending.id, depends_on_task_id=previous_task.id))
+                db.add(Dependency(user_id=owner_id(db), task_id=pending.id, depends_on_task_id=previous_task.id))
 
     db.commit()
 
@@ -205,6 +211,7 @@ def seed_demo_workspace(db: Session) -> dict:
         worked = round(rng.uniform(1.0, 5.0), 2) if rng.random() > 0.15 else 0.0
         db.add(
             ProductivityMetric(
+                user_id=owner_id(db),
                 date=day,
                 hours_worked=worked,
                 tasks_completed=rng.randint(0, 3) if worked else 0,
@@ -216,7 +223,7 @@ def seed_demo_workspace(db: Session) -> dict:
         )
         metrics_days += 1
     if seeded_dates:
-        db.add(Setting(key=_DEMO_METRIC_DATES_KEY, value=json.dumps(seeded_dates)))
+        db.add(Setting(user_id=owner_id(db), key=_DEMO_METRIC_DATES_KEY, value=json.dumps(seeded_dates)))
     db.commit()
 
     return DemoSeedResult(

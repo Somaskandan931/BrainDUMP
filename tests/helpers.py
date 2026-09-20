@@ -7,18 +7,56 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.auth.security import create_access_token, hash_password
+from backend.database import SessionLocal, owner_id
 from backend.models.enums import Importance, TaskStatus
 from backend.models.prediction import Prediction
 from backend.models.project import Project
 from backend.models.task import Task
+from backend.models.user import User
+
+# bcrypt is deliberately slow; hash once per test run instead of once per user.
+TEST_PASSWORD = "correct-horse-battery"
+_TEST_PASSWORD_HASH: Optional[str] = None
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def make_user(email: str = "user@example.com", name: str = "Test User") -> User:
+    """Insert a user (email/password login, password TEST_PASSWORD) on its own
+    unscoped session and return it detached -- safe to read .id/.email from."""
+    global _TEST_PASSWORD_HASH
+    if _TEST_PASSWORD_HASH is None:
+        _TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
+
+    session = SessionLocal()
+    try:
+        user = User(email=email, name=name, hashed_password=_TEST_PASSWORD_HASH)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        session.expunge(user)
+        return user
+    finally:
+        session.close()
+
+
+def auth_headers(user: User) -> dict:
+    return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+
+
+def scoped_session(user: User) -> Session:
+    """A Session with tenant filtering turned on for `user` -- the same thing
+    api.deps.get_scoped_db / the background jobs set up. Caller closes it."""
+    session = SessionLocal()
+    session.info["user_id"] = user.id
+    return session
+
+
 def make_project(db: Session, name: str = "Project") -> Project:
-    project = Project(name=name)
+    project = Project(user_id=owner_id(db), name=name)
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -37,6 +75,7 @@ def make_task(
     **extra,
 ) -> Task:
     task = Task(
+        user_id=owner_id(db),
         title=title,
         project_id=project.id if project else None,
         importance=importance,
@@ -84,6 +123,7 @@ def make_resolved_prediction(
 ) -> Prediction:
     """A resolved Prediction with error_pct computed the way estimator.resolve_prediction does."""
     prediction = Prediction(
+        user_id=owner_id(db),
         task_id=task.id,
         category=category,
         predicted_hours=predicted,

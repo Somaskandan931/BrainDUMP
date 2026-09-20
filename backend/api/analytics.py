@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
 from backend.schemas.analytics import (
     EstimationErrorResponse,
     EstimationErrorTrendResponse,
@@ -28,17 +28,17 @@ router = APIRouter()
 
 
 @router.get("/weekly-review", response_model=WeeklyReviewResponse)
-def weekly_review(db: Session = Depends(get_db)) -> WeeklyReviewResponse:
+def weekly_review(db: Session = Depends(get_scoped_db)) -> WeeklyReviewResponse:
     return analytics_service.weekly_review(db)
 
 
 @router.get("/estimation-error", response_model=EstimationErrorResponse)
-def estimation_error(db: Session = Depends(get_db)) -> EstimationErrorResponse:
+def estimation_error(db: Session = Depends(get_scoped_db)) -> EstimationErrorResponse:
     return analytics_service.estimation_error(db)
 
 
 @router.get("/estimation-error/trend", response_model=EstimationErrorTrendResponse)
-def estimation_error_trend(db: Session = Depends(get_db)) -> dict:
+def estimation_error_trend(db: Session = Depends(get_scoped_db)) -> dict:
     """
     Historical estimation error, one point per day (nightly-job snapshots
     plus a live-computed point for today) -- the trend view flagged as
@@ -48,7 +48,7 @@ def estimation_error_trend(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/calibration")
-def personal_calibration(db: Session = Depends(get_db)) -> dict:
+def personal_calibration(db: Session = Depends(get_scoped_db)) -> dict:
     """
     Personal Calibration (review #17): the signed per-category bias
     ml/calibration.py is actually applying to new estimates right now,
@@ -60,17 +60,17 @@ def personal_calibration(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/productivity-hours", response_model=ProductivityHoursResponse)
-def productivity_hours(db: Session = Depends(get_db)) -> ProductivityHoursResponse:
+def productivity_hours(db: Session = Depends(get_scoped_db)) -> ProductivityHoursResponse:
     return analytics_service.productivity_hours(db)
 
 
 @router.get("/streaks", response_model=StreaksResponse)
-def streaks(db: Session = Depends(get_db)) -> StreaksResponse:
+def streaks(db: Session = Depends(get_scoped_db)) -> StreaksResponse:
     return analytics_service.streaks(db)
 
 
 @router.get("/workload", response_model=WorkloadResponse)
-def workload(db: Session = Depends(get_db)) -> WorkloadResponse:
+def workload(db: Session = Depends(get_scoped_db)) -> WorkloadResponse:
     """
     The Workload Engine (PRD Milestone 4): daily/weekly/monthly capacity
     vs. allocated hours, for the dashboard heatmap.
@@ -79,7 +79,7 @@ def workload(db: Session = Depends(get_db)) -> WorkloadResponse:
 
 
 @router.get("/execution-score", response_model=ExecutionScoreResponse)
-def execution_score(db: Session = Depends(get_db)) -> dict:
+def execution_score(db: Session = Depends(get_scoped_db)) -> dict:
     """
     The Execution Score (PRD §15/§37, Algorithm 8) — the dashboard hero
     metric. See services/execution_score_service.py for how the 0-100
@@ -90,7 +90,7 @@ def execution_score(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/execution-score/trend", response_model=ExecutionScoreTrendResponse)
-def execution_score_trend(db: Session = Depends(get_db)) -> dict:
+def execution_score_trend(db: Session = Depends(get_scoped_db)) -> dict:
     """
     Historical Execution Score, one point per day (nightly-job snapshots
     plus a live-computed point for today) -- the trend view flagged as

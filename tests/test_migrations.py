@@ -21,6 +21,14 @@ def fresh_engine(tmp_path):
     engine.dispose()
 
 
+# A minimal valid user row (email/password login) for tests that insert raw SQL
+# into tenant-owned tables, which all require a user_id now.
+_INSERT_USER = (
+    "INSERT INTO users (id, email, hashed_password, is_active, created_at, updated_at) "
+    "VALUES (1, 'u@example.com', 'x', 1, '2026-01-01', '2026-01-01')"
+)
+
+
 def _model_tables() -> set[str]:
     return set(Base.metadata.tables)
 
@@ -36,7 +44,7 @@ def test_there_is_exactly_one_head_revision():
     cfg = Config()
     cfg.set_main_option("script_location", str(migrate.MIGRATIONS_DIR))
     assert len(ScriptDirectory.from_config(cfg).get_heads()) == 1
-    assert migrate.head_revision() == "0002"
+    assert migrate.head_revision() == "0005"
 
 
 def test_upgrade_on_an_empty_database_creates_every_model_table(fresh_engine):
@@ -78,7 +86,8 @@ def test_init_db_on_a_new_file_creates_tables_and_stamps_head(fresh_engine):
 def test_init_db_is_idempotent(fresh_engine):
     init_db(fresh_engine)
     with fresh_engine.begin() as connection:
-        connection.execute(text("INSERT INTO settings (key, value, created_at, updated_at) VALUES ('k', '1', '2026-01-01', '2026-01-01')"))
+        connection.execute(text(_INSERT_USER))
+        connection.execute(text("INSERT INTO settings (user_id, key, value, created_at, updated_at) VALUES (1, 'k', '1', '2026-01-01', '2026-01-01')"))
 
     init_db(fresh_engine)
 
@@ -93,10 +102,11 @@ def test_legacy_database_is_brought_up_to_date_and_stamped(fresh_engine):
     Base.metadata.create_all(bind=fresh_engine)
     with fresh_engine.begin() as connection:
         connection.execute(text("ALTER TABLE productivity_metrics DROP COLUMN execution_score"))
+        connection.execute(text(_INSERT_USER))
         connection.execute(
             text(
-                "INSERT INTO projects (name, status, created_at, updated_at) "
-                "VALUES ('Kept', 'active', '2026-01-01', '2026-01-01')"
+                "INSERT INTO projects (user_id, name, status, created_at, updated_at) "
+                "VALUES (1, 'Kept', 'active', '2026-01-01', '2026-01-01')"
             )
         )
     assert not migrate.is_managed(fresh_engine)
@@ -134,11 +144,12 @@ def _make_pre_alembic_db_with_todoist_id(engine) -> None:
             with ops.batch_alter_table("tasks") as batch_op:
                 batch_op.add_column(sa.Column("todoist_id", sa.String(64), nullable=True))
                 batch_op.create_unique_constraint("uq_tasks_todoist_id", ["todoist_id"])
+        connection.execute(text(_INSERT_USER))
         connection.execute(
             text(
-                "INSERT INTO tasks (title, status, importance, todoist_id, created_at, updated_at) "
-                "VALUES ('Keep me', 'pending', 'medium', 'td-123', '2026-01-01', '2026-01-01'), "
-                "       ('Me too', 'completed', 'high', NULL, '2026-01-01', '2026-01-01')"
+                "INSERT INTO tasks (user_id, title, status, importance, todoist_id, created_at, updated_at) "
+                "VALUES (1, 'Keep me', 'pending', 'medium', 'td-123', '2026-01-01', '2026-01-01'), "
+                "       (1, 'Me too', 'completed', 'high', NULL, '2026-01-01', '2026-01-01')"
             )
         )
     with engine.begin() as connection:
@@ -177,6 +188,111 @@ def test_dropping_todoist_id_keeps_the_other_task_columns_and_indexes(fresh_engi
 
 
 def test_todoist_cleanup_is_a_no_op_on_a_database_that_never_had_the_column(fresh_engine):
-    migrate.upgrade_to_head(fresh_engine)  # 0001 -> 0002 on a schema without the column
-    assert migrate.current_revision(fresh_engine) == "0002"
+    migrate.upgrade_to_head(fresh_engine)  # 0001 -> head on a schema that never had the column
+    assert migrate.current_revision(fresh_engine) == migrate.head_revision()
     assert _tables(fresh_engine) == _model_tables()
+
+
+# ---------------------------------------------------------------------------
+# The multi-user auth upgrade path (0003 users + user_id, 0004 settings/plans/
+# memory/metrics, 0005 per-user google_event_id)
+# ---------------------------------------------------------------------------
+
+def _build_pre_auth_database(engine) -> None:
+    """A database exactly as it was before multi-user auth: migrated to 0002
+    (so no users table, no user_id anywhere) and holding real rows."""
+    with engine.begin() as connection:
+        command.upgrade(migrate._config(connection), "0002")
+    with engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO projects (name, status, created_at, updated_at) VALUES ('Old project', 'active', '2026-01-01', '2026-01-01')")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO tasks (project_id, title, status, importance, created_at, updated_at) "
+                "VALUES (1, 'Old task', 'pending', 'medium', '2026-01-01', '2026-01-01')"
+            )
+        )
+        connection.execute(
+            text("INSERT INTO settings (key, value, created_at, updated_at) VALUES ('k', '1', '2026-01-01', '2026-01-01')")
+        )
+        connection.execute(
+            text("INSERT INTO daily_plans (plan_date, buffer_multiplier, created_at, updated_at) VALUES ('2026-01-01', 1.0, '2026-01-01', '2026-01-01')")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO calendar_events (google_event_id, title, start_time, end_time, source, sync_status, synced, created_at, updated_at) "
+                "VALUES ('g-1', 'Class', '2026-01-01 09:00', '2026-01-01 10:00', 'google', 'synced', 1, '2026-01-01', '2026-01-01')"
+            )
+        )
+
+
+def test_existing_pre_auth_data_survives_the_upgrade_under_the_placeholder_user(fresh_engine):
+    """Regression: 0003's placeholder INSERT used to violate ck_users_has_login_method,
+    so upgrading any populated pre-auth database failed at boot."""
+    _build_pre_auth_database(fresh_engine)
+
+    init_db(fresh_engine)
+
+    assert migrate.current_revision(fresh_engine) == migrate.head_revision()
+    with fresh_engine.connect() as connection:
+        placeholder = connection.execute(
+            text("SELECT id, is_active, hashed_password FROM users WHERE email = 'legacy@local'")
+        ).one()
+        assert placeholder.is_active == 0  # can never be logged into
+        assert placeholder.hashed_password is None
+        for table in ("projects", "tasks", "settings", "daily_plans", "calendar_events"):
+            owners = {r[0] for r in connection.execute(text(f"SELECT user_id FROM {table}"))}
+            assert owners == {placeholder.id}, table
+        assert compare_metadata(
+            MigrationContext.configure(connection, opts={"compare_type": True, "render_as_batch": True}),
+            Base.metadata,
+        ) == []
+
+
+def test_after_the_upgrade_two_users_can_share_a_plan_date_and_a_google_event_id(fresh_engine):
+    """The per-user uniqueness the upgrade has to leave behind: the baseline's
+    global unique on daily_plans.plan_date and calendar_events.google_event_id
+    would make the second user's insert an IntegrityError."""
+    _build_pre_auth_database(fresh_engine)
+    init_db(fresh_engine)
+
+    with fresh_engine.begin() as connection:
+        for uid in (101, 102):
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password, is_active, created_at, updated_at) "
+                    f"VALUES ({uid}, 'u{uid}@example.com', 'x', 1, '2026-01-01', '2026-01-01')"
+                )
+            )
+        for uid in (101, 102):
+            connection.execute(
+                text(
+                    "INSERT INTO daily_plans (user_id, plan_date, buffer_multiplier, created_at, updated_at) "
+                    f"VALUES ({uid}, '2026-02-01', 1.0, '2026-01-01', '2026-01-01')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO calendar_events (user_id, google_event_id, title, start_time, end_time, source, sync_status, synced, created_at, updated_at) "
+                    f"VALUES ({uid}, 'shared-meeting', 'Standup', '2026-02-01 09:00', '2026-02-01 09:30', 'google', 'synced', 1, '2026-01-01', '2026-01-01')"
+                )
+            )
+
+    # ...but the same user still can't have two of either
+    with pytest.raises(sa.exc.IntegrityError):
+        with fresh_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO calendar_events (user_id, google_event_id, title, start_time, end_time, source, sync_status, synced, created_at, updated_at) "
+                    "VALUES (101, 'shared-meeting', 'Dup', '2026-02-01 09:00', '2026-02-01 09:30', 'google', 'synced', 1, '2026-01-01', '2026-01-01')"
+                )
+            )
+    with pytest.raises(sa.exc.IntegrityError):
+        with fresh_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO daily_plans (user_id, plan_date, buffer_multiplier, created_at, updated_at) "
+                    "VALUES (101, '2026-02-01', 1.0, '2026-01-01', '2026-01-01')"
+                )
+            )

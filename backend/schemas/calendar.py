@@ -59,3 +59,18 @@ class CreateSessionEventRequest(BaseModel):
     task_id: int
     start_time: datetime
     end_time: datetime
+
+
+class GoogleConnectionStatus(BaseModel):
+    """Whether *this user* has connected Google Calendar (GET /api/calendar/google/status)."""
+
+    oauth_client_configured: bool = Field(
+        description="False when the server has no GOOGLE_CALENDAR_CLIENT_ID/SECRET -- connecting is impossible"
+    )
+    connected: bool
+
+
+class GoogleConnectResponse(BaseModel):
+    """Where to send the user's browser for Google's consent screen."""
+
+    authorization_url: str

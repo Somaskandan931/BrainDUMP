@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.ai import episodic_memory, semantic_memory
-from backend.database import get_db
+from backend.api.deps import get_scoped_db
+from backend.database import owner_id
 from backend.models.project import Project
 from backend.models.enums import EpisodicEventType, ProjectStatus, TaskStatus
 from backend.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead
@@ -26,8 +27,8 @@ router = APIRouter()
 
 
 @router.post("/", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Project:
-    project = Project(**payload.model_dump())
+def create_project(payload: ProjectCreate, db: Session = Depends(get_scoped_db)) -> Project:
+    project = Project(user_id=owner_id(db), **payload.model_dump())
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -37,7 +38,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Pro
 @router.get("/", response_model=List[ProjectRead])
 def list_projects(
     status_filter: Optional[ProjectStatus] = None,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_scoped_db),
 ) -> List[Project]:
     query = db.query(Project)
     if status_filter is not None:
@@ -46,7 +47,7 @@ def list_projects(
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
-def get_project(project_id: int, db: Session = Depends(get_db)) -> Project:
+def get_project(project_id: int, db: Session = Depends(get_scoped_db)) -> Project:
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -54,7 +55,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> Project:
 
 
 @router.put("/{project_id}", response_model=ProjectRead)
-def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depends(get_db)) -> Project:
+def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depends(get_scoped_db)) -> Project:
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -96,7 +97,7 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_200_OK)
-def delete_project(project_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_project(project_id: int, db: Session = Depends(get_scoped_db)) -> dict:
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")

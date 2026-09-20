@@ -47,6 +47,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.models.enums import ProjectStatus
 from backend.models.project import Project
 from backend.models.settings import Setting
@@ -109,7 +110,7 @@ def compute_profile(db: Session) -> dict:
 def persist_profile(db: Session, profile: dict) -> Setting:
     setting = db.query(Setting).filter(Setting.key == _SETTINGS_KEY).first()
     if setting is None:
-        setting = Setting(key=_SETTINGS_KEY, value=json.dumps(profile))
+        setting = Setting(user_id=owner_id(db), key=_SETTINGS_KEY, value=json.dumps(profile))
         db.add(setting)
     else:
         setting.value = json.dumps(profile)

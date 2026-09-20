@@ -17,9 +17,9 @@ every model imports Base from here).
 
 import logging
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, with_loader_criteria
 
 from backend import config
 
@@ -42,7 +42,15 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 def get_db():
-    """FastAPI dependency: yields a session, guarantees it's closed after the request."""
+    """FastAPI dependency: yields a session, guarantees it's closed after the request.
+
+    This is the *unscoped* session — no tenant filter applied. Only the
+    auth endpoints (before a user is known) and anything that never
+    touches a user-owned table should depend on this directly; every
+    other route depends on api.deps.get_scoped_db instead, which wraps
+    this and turns on row-level tenant isolation for the request — see
+    _tenant_filter_listener below.
+    """
     db = SessionLocal()
     try:
         yield db
@@ -50,33 +58,113 @@ def get_db():
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Multi-user row-level isolation (multi-user auth milestone)
+# ---------------------------------------------------------------------------
+# Every tenant-owned table (Project, Task, Subtask, Dependency,
+# WorkSession, CalendarEvent, Prediction, Setting, DailyPlan,
+# EpisodicMemory, SemanticMemory, ProductivityMetric) carries a
+# `user_id` FK. Rather than hand-adding `.filter(Model.user_id ==
+# current_user.id)` to every one of the ~40 query sites scattered
+# across services/, ai/, ml/, and scheduler/ (and trusting every
+# future one to remember it too -- exactly the "a stray unscoped query
+# anywhere in that chain leaks data between users silently" risk this
+# refactor set out to close), a single SQLAlchemy `do_orm_execute`
+# listener applies the filter automatically to every SELECT (and
+# ORM-level UPDATE/DELETE) against a tenant-owned model, for the
+# lifetime of a Session that has `session.info["user_id"]` set. This is
+# SQLAlchemy's documented multi-tenancy recipe (`with_loader_criteria`),
+# and it also transparently covers relationship lazy-loads (e.g.
+# `project.tasks`), not just top-level queries.
+#
+# api.deps.get_scoped_db is what actually sets `session.info["user_id"]`
+# for a request, from the authenticated user. Background jobs
+# (scheduler/morning.py, scheduler/nightly.py) set it by hand, once per
+# user, since they have no HTTP request to depend on.
+#
+# This only covers reads (and updates/deletes against already-scoped
+# rows) automatically. A brand-new row's `user_id` still has to be set
+# explicitly at creation time -- see owner_id() below, used at every
+# `Model(...)` construction site for a tenant-owned table.
+
+
+def _tenant_models():
+    """Lazy import to avoid a circular import (every model imports Base
+    from this module) -- same trick init_db() already uses below."""
+    from backend.models.project import Project
+    from backend.models.task import Task, Subtask
+    from backend.models.dependency import Dependency
+    from backend.models.session import WorkSession
+    from backend.models.calendar_event import CalendarEvent
+    from backend.models.prediction import Prediction
+    from backend.models.settings import Setting
+    from backend.models.daily_plan import DailyPlan
+    from backend.models.memory import EpisodicMemory, SemanticMemory
+    from backend.models.metrics import ProductivityMetric
+
+    return (
+        Project,
+        Task,
+        Subtask,
+        Dependency,
+        WorkSession,
+        CalendarEvent,
+        Prediction,
+        Setting,
+        DailyPlan,
+        EpisodicMemory,
+        SemanticMemory,
+        ProductivityMetric,
+    )
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _tenant_filter_listener(execute_state) -> None:
+    if execute_state.is_column_load or execute_state.is_relationship_load:
+        return
+    user_id = execute_state.session.info.get("user_id")
+    if user_id is None:
+        return
+    for model in _tenant_models():
+        # Pass a plain boolean expression, NOT a lambda. The callable form of
+        # with_loader_criteria goes through SQLAlchemy's lambda-statement cache,
+        # which keys on the lambda's code and only re-extracts values from
+        # *closure cells*: the original `lambda cls, uid=user_id: ...` (a default
+        # argument, not a closure) had the first user's id frozen into the cached
+        # statement, so every later session filtered on that user -- every user
+        # saw the first user's data. An ordinary expression never enters that
+        # cache path, so there is nothing to get wrong; the value is bound as a
+        # normal parameter per execution. tests/test_tenant_isolation.py guards it.
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(model, model.user_id == user_id, include_aliases=True)
+        )
+
+
+def owner_id(db: Session) -> int:
+    """The current request/job's user id, for stamping onto a newly
+    created tenant-owned row (`Task(..., user_id=owner_id(db))`).
+
+    Raises if called on a session that was never scoped -- a missing
+    user_id here means a creation path is reachable without
+    authentication, which should fail loudly in dev/tests rather than
+    silently write an orphaned row.
+    """
+    user_id = db.info.get("user_id")
+    if user_id is None:
+        raise RuntimeError(
+            "owner_id() called on a database session with no user_id set. "
+            "This route/job should depend on api.deps.get_scoped_db (or set "
+            "db.info['user_id'] itself for a background job) before creating "
+            "a user-owned row."
+        )
+    return user_id
+
+
 def _sync_missing_columns(bind: Engine | None = None) -> None:
     """
     LEGACY PATH -- only runs for a database Alembic doesn't manage yet (see
     init_db()); once a DB has an alembic_version table, schema changes are
     Alembic migrations in backend/migrations/versions instead.
-
-    Before Alembic, `Base.metadata.create_all()` was the only schema tool, and
-    it only creates tables that don't exist yet -- it never alters an
-    existing table. Every round that's added a column to a model (e.g.
-    `recommended_deadline`/`latest_safe_start`/`risk_score`/
-    `completion_probability` for the Deadline Engine) has silently
-    depended on the person deleting their `data/tasks.db` and starting
-    fresh to pick it up. That's a real `no such column` 500 the moment
-    someone's existing dev DB predates a newer model field.
-
-    This is a deliberately minimal stand-in for a real migration tool:
-    for every table already in Base.metadata, diff its declared columns
-    against what SQLite actually has (via `inspect()`), and
-    `ALTER TABLE ... ADD COLUMN` for anything missing. SQLite's `ADD
-    COLUMN` only supports adding a single column at a time with no
-    complex constraints, which is exactly the shape every column added
-    to this schema so far has been (nullable, no server-side default) --
-    so this covers the real cases without pulling in Alembic for a
-    single-user local app. A column that *isn't* nullable and has no
-    default is logged and skipped rather than guessed at, since blindly
-    backfilling a NOT NULL column's value would be a data decision this
-    layer shouldn't make silently.
     """
     bind = bind or engine
     inspector = inspect(bind)
@@ -108,15 +196,6 @@ def _sync_missing_columns(bind: Engine | None = None) -> None:
 def init_db(bind: Engine | None = None) -> None:
     """
     Bring the database's schema up to date. Safe to call every startup.
-
-    - Alembic-managed DB (has an alembic_version table): apply any pending
-      migrations from backend/migrations/versions.
-    - Anything else -- a brand-new file, or a DB created before Alembic was
-      introduced: create missing tables, add any columns the models gained
-      since (the old stand-in), then stamp it at head so every later schema
-      change goes through a migration.
-
-    `bind` defaults to the app's engine; tests pass their own.
     """
     from backend import migrate, models  # noqa: F401  (models registers tables on Base.metadata)
 
@@ -131,6 +210,5 @@ def init_db(bind: Engine | None = None) -> None:
 
 
 if __name__ == "__main__":
-    # `python -m backend.database` — quick manual sanity check.
     init_db()
     print(f"Initialized database at {config.DB_PATH}")

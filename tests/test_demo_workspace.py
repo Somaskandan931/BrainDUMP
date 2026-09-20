@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from backend.database import owner_id
 from backend.models.metrics import ProductivityMetric
 from backend.models.project import Project
 from backend.models.task import Task
@@ -49,7 +50,7 @@ def test_reset_leaves_real_data_alone(client, db):
     real_project = make_project(db, "My real project")
     real_task = make_task(db, "My real task", project=real_project)
     today = utcnow().date()
-    db.add(ProductivityMetric(date=today, hours_worked=2.0, tasks_completed=1, tasks_planned=2))
+    db.add(ProductivityMetric(user_id=owner_id(db), date=today, hours_worked=2.0, tasks_completed=1, tasks_planned=2))
     db.commit()
 
     client.post("/api/demo/seed")
@@ -64,7 +65,7 @@ def test_reset_leaves_real_data_alone(client, db):
 
 def test_seed_never_overwrites_an_existing_real_metric_row(client, db):
     yesterday = utcnow().date() - timedelta(days=1)
-    db.add(ProductivityMetric(date=yesterday, hours_worked=7.5, tasks_completed=4, tasks_planned=4))
+    db.add(ProductivityMetric(user_id=owner_id(db), date=yesterday, hours_worked=7.5, tasks_completed=4, tasks_planned=4))
     db.commit()
 
     client.post("/api/demo/seed")

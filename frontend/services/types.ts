@@ -165,6 +165,16 @@ export interface CalendarSyncResponse {
   errors: string[];
 }
 
+/** GET /api/calendar/google/status — the *caller's* connection, not the server's alone. */
+export interface GoogleCalendarStatus {
+  oauth_client_configured: boolean;
+  connected: boolean;
+}
+
+export interface GoogleConnectResponse {
+  authorization_url: string;
+}
+
 // --- Deadline Engine (services/deadline_service.py) -------------------------
 
 // Mirrors backend/schemas/schedule.BUFFER_MULTIPLIERS
@@ -533,4 +543,19 @@ export class ApiError extends Error {
     this.status = status;
     this.detail = detail;
   }
+}
+
+// --- Auth ---------------------------------------------------------------
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name?: string | null;
+  google_picture_url?: string | null;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
 }

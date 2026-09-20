@@ -1,0 +1,63 @@
+# Render Blueprint. In the Render dashboard: New -> Blueprint -> point at
+# this repo, and it creates both services below in one go. You can also
+# create them by hand in the UI if you'd rather not use Blueprints.
+#
+# Two services because Ollama needs its own RAM/disk budget independent
+# of the API — bundling them in one container means one OOM takes down
+# both, and you can't size/scale them separately.
+
+services:
+  # --- FastAPI backend --------------------------------------------------
+  - type: web
+    name: brain-dump-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: standard          # needs the RAM for sentence-transformers/faiss at import time
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://YOUR-SITE.netlify.app   # <-- set to your real Netlify URL
+      - key: OLLAMA_HOST
+        value: http://brain-dump-ollama:11434  # Render private-service DNS name
+      - key: OLLAMA_MODEL
+        value: qwen3:8b                        # match deploy/ollama/Dockerfile
+      - key: BRAINDUMP_DATA_DIR
+        value: /data
+      # --- Auth + per-user Google Calendar (multi-user) ------------------
+      - key: JWT_SECRET_KEY
+        generateValue: true                        # Render generates a random secret once
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false                                # secret: encrypts stored Google tokens (see INTEGRATIONS.md)
+      - key: GOOGLE_LOGIN_CLIENT_ID
+        sync: false                                # Web OAuth client id (Sign in with Google); optional
+      - key: GOOGLE_CALENDAR_CLIENT_ID
+        sync: false                                # Web OAuth client id (Calendar); optional
+      - key: GOOGLE_CALENDAR_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALENDAR_REDIRECT_URI
+        value: https://YOUR-BACKEND.onrender.com/api/calendar/google/callback   # <-- must match Google Cloud Console
+      - key: FRONTEND_URL
+        value: https://YOUR-SITE.netlify.app       # <-- where the OAuth callback sends the browser back
+      - key: GOOGLE_CALENDAR_ID
+        value: primary
+    disk:
+      name: brain-dump-data
+      mountPath: /data
+      sizeGB: 1
+
+  # --- Local LLM (Ollama), private — only reachable from other Render
+  # services on this account, not from the public internet. ------------
+  - type: pserv
+    name: brain-dump-ollama
+    runtime: docker
+    dockerfilePath: ./deploy/ollama/Dockerfile
+    dockerContext: ./deploy/ollama
+    plan: standard           # bump to pro if you keep the 8b model — see the Dockerfile's note
+    envVars:
+      - key: OLLAMA_MODEL
+        value: qwen3:8b
+    disk:
+      name: ollama-models
+      mountPath: /root/.ollama
+      sizeGB: 10

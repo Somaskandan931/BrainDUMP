@@ -1,15 +1,5 @@
 """
 models/task.py — SQLAlchemy models for Task and Subtask.
-
-Task is the central entity in the system. Most AI/ML output lands on a
-Task row: estimated_hours + confidence_score come from the Estimator
-Agent / ml/estimator.py, priority_score comes from ml/priority_model.py,
-and status/completed_at get updated as the user works.
-
-Subtask is deliberately lightweight — it exists for AI Task Breakdown
-output (e.g. "Build RAG chatbot" -> Research, Dataset, Embedding, ...)
-and doesn't carry its own priority score; subtasks inherit urgency from
-their parent Task.
 """
 
 from __future__ import annotations
@@ -36,8 +26,10 @@ class Task(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    # Nullable: a task doesn't have to belong to a project (e.g. a
-    # one-off "Gym" or "Buy groceries" item from a brain dump).
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
     project_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
@@ -58,44 +50,20 @@ class Task(Base, TimestampMixin):
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # --- Deadline Engine outputs (PRD §19/§31/§62) ---------------------------
-    # Persisted copies of the Deadline Engine's "default" buffer target, its
-    # latest-safe-start, and its risk/completion figures — previously these
-    # were only ever computed on the fly in deadline_service and thrown away,
-    # so nothing else (list views, notifications, analytics) could read them
-    # without recomputing. deadline_service.persist_deadline_plan() fills
-    # these in.
     recommended_deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     latest_safe_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0 (safe) - 1.0 (at risk)
-    completion_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0-1.0
+    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    completion_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # --- AI/ML-populated fields -------------------------------------------------
     estimated_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     actual_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0.0-1.0
+    confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     priority_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     context_switch_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # Manual ordering set by dragging a task in the Today list. Deliberately
-    # separate from priority_score (which the ML priority engine owns and
-    # the scheduler reads) — this is purely "what order does the user want
-    # to see these in", never fed back into scheduling. Null until the user
-    # drags something; untouched tasks fall back to created_at ordering.
     sort_order: Mapped[Optional[int]] = mapped_column(nullable=True)
-
-    # Times "Skip" has been pressed on the Today schedule (services/
-    # scheduler_service.skip_task). Purely informational/analytics right
-    # now — skipping pushes the task to the back of today's order (same
-    # sort_order mechanism as a drag) rather than changing status, since
-    # a skipped task is still owed, just not next. Nullable at the DB
-    # level on purpose: database._sync_missing_columns() ADD COLUMNs
-    # without a DEFAULT clause, so an existing row backfilled by that
-    # path would violate NOT NULL. Application code always coalesces
-    # None to 0 (see services/scheduler_service.skip_task).
     skip_count: Mapped[Optional[int]] = mapped_column(nullable=True)
 
-    # --- Relationships ------------------------------------------------------
     project: Mapped[Optional["Project"]] = relationship(back_populates="tasks")
     subtasks: Mapped[List["Subtask"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
@@ -118,6 +86,9 @@ class Subtask(Base, TimestampMixin):
     __tablename__ = "subtasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
 
     title: Mapped[str] = mapped_column(String(300), nullable=False)

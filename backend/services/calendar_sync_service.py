@@ -16,26 +16,50 @@ Calendar, in both directions:
 - sync_calendar(): the combined pass both the API's POST /sync and the
   morning/nightly jobs call.
 
-Every function here takes a live Session and commits its own work —
-same convention as scheduler_service/deadline_service — so callers don't
-need to know this module touches the DB.
+Every function here takes a live, tenant-scoped Session and commits its
+own work — same convention as scheduler_service/deadline_service — so
+callers don't need to know this module touches the DB.
+
+Multi-user auth follow-up: every function now gets *this session's*
+Google service via _get_service(db) — the user's stored OAuth
+credentials (services/integration_credentials_service), refreshed
+transparently and persisted back if Google rotated the access token
+during the call. New CalendarEvent rows get user_id=owner_id(db), same
+as every other tenant-owned table.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import Any, List
 
 from sqlalchemy.orm import Session
 
 from backend import config
+from backend.database import owner_id
 from backend.integrations import google_calendar
 from backend.models.calendar_event import CalendarEvent
 from backend.models.enums import EventSource, SyncStatus
 from backend.models.task import Task
+from backend.services import integration_credentials_service
 
 logger = logging.getLogger(__name__)
+
+
+def _get_service(db: Session) -> Any:
+    """
+    This session's user's Calendar service, per
+    google_calendar.get_service_for_user() — persists a refreshed
+    access token back to Settings immediately if one came back, so a
+    token refresh mid-sync isn't lost if something later in the same
+    request raises.
+    """
+    credentials_json = integration_credentials_service.get_google_credentials_json(db)
+    service, refreshed_json = google_calendar.get_service_for_user(credentials_json)
+    if refreshed_json is not None:
+        integration_credentials_service.save_google_credentials_json(db, refreshed_json)
+    return service
 
 
 def pull_google_events(db: Session, days_ahead: int = None) -> tuple:
@@ -47,12 +71,14 @@ def pull_google_events(db: Session, days_ahead: int = None) -> tuple:
     anymore (deleted/moved on Google's side) are removed. Commits once.
     Returns (pulled_count, removed_count).
     """
+    service = _get_service(db)
+
     days_ahead = days_ahead or config.SCHEDULING_HORIZON_DAYS
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=config.CALENDAR_SYNC_LOOKBACK_DAYS)
     window_end = now + timedelta(days=days_ahead)
 
-    remote_events = google_calendar.list_events(window_start, window_end)
+    remote_events = google_calendar.list_events(service, window_start, window_end)
     remote_by_id = {e["google_event_id"]: e for e in remote_events}
 
     existing = (
@@ -71,6 +97,7 @@ def pull_google_events(db: Session, days_ahead: int = None) -> tuple:
         row = existing_by_google_id.get(google_event_id)
         if row is None:
             row = CalendarEvent(
+                user_id=owner_id(db),
                 google_event_id=google_event_id,
                 title=remote["title"],
                 start_time=remote["start"],
@@ -115,17 +142,19 @@ def push_pending_sessions(db: Session) -> tuple:
     if not pending:
         return 0, []
 
+    service = _get_service(db)
+
     pushed = 0
     errors: List[str] = []
     for event in pending:
         try:
             if event.google_event_id:
                 google_calendar.update_event(
-                    event.google_event_id, title=event.title, start=event.start_time, end=event.end_time
+                    service, event.google_event_id, title=event.title, start=event.start_time, end=event.end_time
                 )
             else:
                 event.google_event_id = google_calendar.create_event(
-                    event.title, event.start_time, event.end_time
+                    service, event.title, event.start_time, event.end_time
                 )
             event.sync_status = SyncStatus.SYNCED
             event.synced = True
@@ -144,12 +173,12 @@ def push_single_event(db: Session, task: Task, start_time: datetime, end_time: d
     Create one CalendarEvent immediately and push it to Google right
     away — the "Start Timer on this task right now" path, distinct from
     the batch scheduler which plans ahead over a horizon. Commits once.
-    Raises GoogleCalendarError/GoogleCalendarNotConfigured on failure
-    without leaving an orphaned local row: the event is only committed
-    once the Google push (or the decision to record it as pending)
-    succeeds.
+    Raises GoogleCalendarError on failure without leaving an orphaned
+    local row: the event is only committed once the Google push (or
+    the decision to record it as pending) succeeds.
     """
     event = CalendarEvent(
+        user_id=owner_id(db),
         task_id=task.id,
         title=task.title,
         start_time=start_time,
@@ -159,13 +188,15 @@ def push_single_event(db: Session, task: Task, start_time: datetime, end_time: d
         synced=False,
     )
     try:
-        event.google_event_id = google_calendar.create_event(task.title, start_time, end_time)
+        service = _get_service(db)
+        event.google_event_id = google_calendar.create_event(service, task.title, start_time, end_time)
         event.sync_status = SyncStatus.SYNCED
         event.synced = True
     except google_calendar.GoogleCalendarNotConfigured:
-        # Calendar sync isn't set up — still record the session locally
-        # (the scheduler already treats BRAIN_DUMP rows as the source of
-        # truth for busy time) so the feature degrades, not breaks.
+        # Calendar sync isn't set up (or this user hasn't connected it) --
+        # still record the session locally (the scheduler already treats
+        # BRAIN_DUMP rows as the source of truth for busy time) so the
+        # feature degrades, not breaks.
         pass
 
     db.add(event)

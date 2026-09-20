@@ -13,6 +13,11 @@ one table per event/relation type — within a tier, every type shares
 the same shape, and a single small table is easier for the matching
 ai/*_memory.py module and the AI coach's context snapshot to query
 across types than several near-identical tables would be.
+
+Both now carry user_id directly rather than deriving ownership from
+subject_project_id (SemanticMemory's is nullable, so it can't always be
+used that way) -- every row here is generated from one user's own
+activity, so it's owned the same direct way Task/Project are.
 """
 
 from __future__ import annotations
@@ -35,6 +40,9 @@ class EpisodicMemory(Base, TimestampMixin):
     __tablename__ = "episodic_memory"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     event_type: Mapped[EpisodicEventType] = mapped_column(
         sa_enum(EpisodicEventType), nullable=False
@@ -83,6 +91,9 @@ class SemanticMemory(Base, TimestampMixin):
     __tablename__ = "semantic_memory"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     relation_type: Mapped[SemanticRelationType] = mapped_column(
         sa_enum(SemanticRelationType), nullable=False

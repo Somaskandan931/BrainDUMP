@@ -33,6 +33,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.database import owner_id
 from backend.models.enums import EpisodicEventType
 from backend.models.memory import EpisodicMemory
 
@@ -69,6 +70,7 @@ def record_event(
         return existing
 
     event = EpisodicMemory(
+        user_id=owner_id(db),
         event_type=event_type,
         occurred_on=occurred_on,
         title=title,

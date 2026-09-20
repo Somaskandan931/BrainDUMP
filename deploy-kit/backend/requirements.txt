@@ -1,0 +1,26 @@
+# Backend dependencies — remaining versions pinned as each milestone lands.
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0,<3.0
+pydantic
+pydantic-settings
+apscheduler
+sentence-transformers
+faiss-cpu
+scikit-learn
+joblib
+xgboost
+lightgbm
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+requests
+python-dotenv
+alembic
+passlib[bcrypt]
+# passlib 1.7.4 is incompatible with bcrypt>=4.1 (hash_password raises ValueError on 5.x);
+# pin until passlib is replaced
+bcrypt==4.0.1
+python-jose[cryptography]
+google-auth
+email-validator

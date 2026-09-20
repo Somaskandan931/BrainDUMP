@@ -1,29 +1,48 @@
 """
 integrations/google_calendar.py — Google Calendar API wrapper.
 
-Milestone 6 implementation:
-- OAuth flow + token storage (local only — token.json holds the refresh
-  token so the browser consent screen only ever appears once)
-- get_free_busy(start, end) -> busy (start, end) intervals for the
-  configured calendar
-- list_events(start, end) -> full event details, used to populate the
-  local CalendarEvent cache with source=GOOGLE rows
-- create_event(title, start, end) / update_event(...) / delete_event(...)
-  for pushing Brain Dump work sessions (CalendarEvent rows with
-  source=BRAIN_DUMP) up to Google
+Multi-user auth follow-up: this used to cache one googleapiclient
+Resource for the whole process, built from a single credentials.json /
+token.json pair on disk -- correct for a single local user, wrong for
+a real web app where each user connects their own Google account.
+Every function below now takes an explicit `service` (or, for the
+OAuth handshake itself, works with a `Credentials` object) rather than
+reaching for a process-global singleton, so callers
+(services/calendar_sync_service.py) are responsible for getting the
+right user's service via get_service_for_user() first.
+
+Three pieces:
+- OAuth handshake: build_authorization_url() / exchange_code() drive a
+  standard web-application OAuth flow (Authorization Code grant,
+  access_type=offline so a refresh token comes back) -- the frontend
+  sends the user to the URL from the first, Google redirects back to
+  api/calendar.py's callback route with a `code`, which the second
+  exchanges for Credentials. The resulting Credentials.to_json() blob
+  is what services/integration_credentials_service.py persists per
+  user; this module never touches the database itself.
+- get_service_for_user(): loads a user's stored credentials JSON,
+  transparently refreshes an expired access token, and returns
+  (service, refreshed_credentials_json_or_None) -- the caller persists
+  the second value back via integration_credentials_service only when
+  it isn't None (i.e. only when a refresh actually happened).
+- The actual Calendar API operations (list_events, get_free_busy,
+  create_event, update_event, delete_event), each taking `service` as
+  returned above.
 
 Every public function can raise GoogleCalendarNotConfigured (no
-credentials.json yet — a one-time local setup step, not a bug) or the
-more general GoogleCalendarError (API call failed). Callers — mainly
-services/calendar_sync_service.py — catch these and degrade gracefully
-rather than letting a missing OAuth setup take down the scheduler.
+GOOGLE_CALENDAR_CLIENT_ID/SECRET set, or this user hasn't connected
+their calendar yet) or the more general GoogleCalendarError (API call
+failed). Callers -- mainly services/calendar_sync_service.py -- catch
+these and degrade gracefully rather than letting a missing/unconnected
+integration take down the scheduler.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
 from backend import config
 
@@ -36,10 +55,11 @@ class GoogleCalendarError(RuntimeError):
 
 class GoogleCalendarNotConfigured(GoogleCalendarError):
     """
-    Raised when credentials.json isn't present yet. This is expected on a
-    fresh checkout — Google Calendar sync is opt-in and requires a
-    one-time OAuth app setup (see INTEGRATIONS.md) — so callers should
-    treat it as "feature not turned on", not a crash.
+    Raised when the app-wide OAuth client isn't configured
+    (GOOGLE_CALENDAR_CLIENT_ID/SECRET unset) or this particular user
+    hasn't connected their Google Calendar yet. Expected in both cases
+    -- Calendar sync is opt-in -- so callers should treat it as
+    "feature not turned on for this user", not a crash.
     """
 
 
@@ -51,68 +71,142 @@ class RemoteEvent(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Auth
+# OAuth handshake (web application flow, one connection per user)
 # ---------------------------------------------------------------------------
 
-_service: Any = None  # lazily built googleapiclient Resource, cached for the process
+def is_oauth_client_configured() -> bool:
+    return bool(config.GOOGLE_CALENDAR_CLIENT_ID and config.GOOGLE_CALENDAR_CLIENT_SECRET)
 
 
-def _load_credentials():
-    """
-    Load cached OAuth credentials from GOOGLE_TOKEN_PATH, refreshing if
-    expired, or run the local-server consent flow the first time.
-    Imports are local to this function so the whole app doesn't need the
-    google-auth-oauthlib import chain unless calendar sync is actually used.
-    """
-    if not config.GOOGLE_CREDENTIALS_PATH.exists():
+def _client_config() -> Dict[str, Any]:
+    if not is_oauth_client_configured():
         raise GoogleCalendarNotConfigured(
-            f"No Google OAuth client secret found at {config.GOOGLE_CREDENTIALS_PATH}. "
-            "Download one from Google Cloud Console (APIs & Services -> Credentials -> "
-            "Create Credentials -> OAuth client ID -> Desktop app), save it as "
-            "credentials.json in the ai_os/ root, then retry. See INTEGRATIONS.md."
+            "GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET are not set. "
+            "Create a Web application OAuth client in Google Cloud Console "
+            "(APIs & Services -> Credentials), add "
+            f"{config.GOOGLE_CALENDAR_REDIRECT_URI} as an authorized redirect URI, "
+            "then set both env vars. See INTEGRATIONS.md."
+        )
+    return {
+        "web": {
+            "client_id": config.GOOGLE_CALENDAR_CLIENT_ID,
+            "client_secret": config.GOOGLE_CALENDAR_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [config.GOOGLE_CALENDAR_REDIRECT_URI],
+        }
+    }
+
+
+def _new_flow(state: Optional[str] = None):
+    """
+    A fresh OAuth Flow for this app's web client. PKCE auto-generation is
+    turned off deliberately: the authorization URL and the code exchange
+    happen in two different HTTP requests (build_authorization_url() vs.
+    the callback route), so two different Flow instances -- and a code
+    verifier generated by the first is gone by the time the second one
+    needs it, which makes Google reject the exchange ("Missing code
+    verifier"). This is a confidential client (it has a client secret), so
+    PKCE isn't required; `state` (a signed, short-lived token) is what ties
+    the callback back to the right user.
+    """
+    from google_auth_oauthlib.flow import Flow
+
+    flow = Flow.from_client_config(
+        _client_config(),
+        scopes=config.GOOGLE_CALENDAR_SCOPES,
+        state=state,
+        autogenerate_code_verifier=False,
+    )
+    flow.redirect_uri = config.GOOGLE_CALENDAR_REDIRECT_URI
+    return flow
+
+
+def build_authorization_url(state: str) -> str:
+    """
+    The URL to send the user's browser to for the Google consent
+    screen. `state` round-trips through Google back to the callback
+    route unmodified -- api/calendar.py signs the current user's id
+    into it (a short-lived JWT) so the callback, which Google calls
+    with no Authorization header of its own, knows which account to
+    attach the resulting credentials to.
+    """
+    flow = _new_flow(state=state)
+    # access_type=offline is what actually gets a refresh_token back;
+    # prompt=consent forces the consent screen (and a fresh
+    # refresh_token) even for a user who authorized this app before,
+    # since Google otherwise silently omits it on a repeat grant.
+    url, _state = flow.authorization_url(
+        access_type="offline", include_granted_scopes="true", prompt="consent"
+    )
+    return url
+
+
+def exchange_code(code: str) -> str:
+    """
+    Exchange the authorization `code` Google's redirect handed back for
+    real credentials. Returns the Credentials.to_json() blob to persist
+    via services/integration_credentials_service.save_google_credentials_json.
+    """
+    flow = _new_flow()
+    try:
+        flow.fetch_token(code=code)
+    except Exception as exc:  # noqa: BLE001 - oauthlib raises several distinct exception types
+        raise GoogleCalendarError(f"Google Calendar OAuth code exchange failed: {exc}") from exc
+    return flow.credentials.to_json()
+
+
+# ---------------------------------------------------------------------------
+# Per-user service construction
+# ---------------------------------------------------------------------------
+
+def get_service_for_user(credentials_json: Optional[str]) -> Tuple[Any, Optional[str]]:
+    """
+    Build a Calendar v3 API client from a user's stored credentials
+    JSON (see integration_credentials_service.get_google_credentials_json).
+
+    Returns (service, refreshed_credentials_json). The second element
+    is None unless the access token had expired and was refreshed in
+    this call, in which case it's the new JSON the caller must persist
+    back (via integration_credentials_service.save_google_credentials_json)
+    so the next call doesn't have to refresh again.
+
+    Raises GoogleCalendarNotConfigured if the user hasn't connected
+    their calendar yet (credentials_json is None) or the refresh token
+    was revoked and there's nothing to refresh from.
+    """
+    if not credentials_json:
+        raise GoogleCalendarNotConfigured(
+            "This account hasn't connected Google Calendar yet. Connect it from Settings."
         )
 
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
 
-    creds: Optional[Credentials] = None
-    if config.GOOGLE_TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(
-            str(config.GOOGLE_TOKEN_PATH), config.GOOGLE_CALENDAR_SCOPES
-        )
+    creds = Credentials.from_authorized_user_info(
+        json.loads(credentials_json), config.GOOGLE_CALENDAR_SCOPES
+    )
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+    refreshed_json: Optional[str] = None
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception as exc:  # noqa: BLE001 - google-auth raises RefreshError and friends
+                raise GoogleCalendarNotConfigured(
+                    "Google Calendar access expired and couldn't be refreshed -- "
+                    "reconnect it from Settings."
+                ) from exc
+            refreshed_json = creds.to_json()
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(config.GOOGLE_CREDENTIALS_PATH), config.GOOGLE_CALENDAR_SCOPES
+            raise GoogleCalendarNotConfigured(
+                "Google Calendar credentials are invalid and can't be refreshed -- "
+                "reconnect it from Settings."
             )
-            # Opens a browser tab for one-time consent; blocks until granted.
-            # Only ever hit once per machine as long as token.json survives.
-            creds = flow.run_local_server(port=0)
 
-        config.GOOGLE_TOKEN_PATH.write_text(creds.to_json())
-
-    return creds
-
-
-def get_service():
-    """Lazily build and cache the Calendar v3 API client for this process."""
-    global _service
-    if _service is None:
-        from googleapiclient.discovery import build
-
-        creds = _load_credentials()
-        _service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-    return _service
-
-
-def reset_service_cache() -> None:
-    """Test/utility hook — forces the next get_service() call to rebuild."""
-    global _service
-    _service = None
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    return service, refreshed_json
 
 
 # ---------------------------------------------------------------------------
@@ -142,16 +236,16 @@ def _run(request, *, action: str):
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Public API -- every function takes the `service` returned by
+# get_service_for_user() for whichever user is currently being synced.
 # ---------------------------------------------------------------------------
 
-def list_events(start: datetime, end: datetime) -> List[RemoteEvent]:
+def list_events(service: Any, start: datetime, end: datetime) -> List[RemoteEvent]:
     """
-    Full event details (id, title, start, end) for the configured calendar
-    in [start, end), skipping cancelled events. Used to populate the local
-    CalendarEvent cache (source=GOOGLE) — see calendar_sync_service.
+    Full event details (id, title, start, end) for the user's configured
+    calendar in [start, end), skipping cancelled events. Used to populate
+    the local CalendarEvent cache (source=GOOGLE) -- see calendar_sync_service.
     """
-    service = get_service()
     events: List[RemoteEvent] = []
     page_token: Optional[str] = None
 
@@ -187,13 +281,12 @@ def list_events(start: datetime, end: datetime) -> List[RemoteEvent]:
     return events
 
 
-def get_free_busy(start: datetime, end: datetime) -> List[tuple]:
+def get_free_busy(service: Any, start: datetime, end: datetime) -> List[tuple]:
     """
-    Busy (start, end) intervals only — cheaper than list_events() when the
+    Busy (start, end) intervals only -- cheaper than list_events() when the
     caller (scheduler) doesn't need titles, just what's occupied. Uses the
     dedicated freebusy endpoint rather than filtering list_events().
     """
-    service = get_service()
     body = {
         "timeMin": start.astimezone(timezone.utc).isoformat(),
         "timeMax": end.astimezone(timezone.utc).isoformat(),
@@ -207,9 +300,10 @@ def get_free_busy(start: datetime, end: datetime) -> List[tuple]:
     ]
 
 
-def create_event(title: str, start: datetime, end: datetime, description: Optional[str] = None) -> str:
-    """Create an event on the configured calendar. Returns the new google_event_id."""
-    service = get_service()
+def create_event(
+    service: Any, title: str, start: datetime, end: datetime, description: Optional[str] = None
+) -> str:
+    """Create an event on the user's configured calendar. Returns the new google_event_id."""
     body: Dict[str, Any] = {
         "summary": title,
         "start": {"dateTime": start.astimezone(timezone.utc).isoformat()},
@@ -226,14 +320,14 @@ def create_event(title: str, start: datetime, end: datetime, description: Option
 
 
 def update_event(
+    service: Any,
     google_event_id: str,
     *,
     title: Optional[str] = None,
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
 ) -> None:
-    """Patch an existing event — only the fields provided are changed."""
-    service = get_service()
+    """Patch an existing event -- only the fields provided are changed."""
     body: Dict[str, Any] = {}
     if title is not None:
         body["summary"] = title
@@ -250,15 +344,14 @@ def update_event(
     )
 
 
-def delete_event(google_event_id: str) -> None:
+def delete_event(service: Any, google_event_id: str) -> None:
     """
     Delete an event. Google returns 404/410 for events already deleted or
-    long expired — treated as success (the desired end state already
+    long expired -- treated as success (the desired end state already
     holds) rather than surfaced as an error to the caller.
     """
     from googleapiclient.errors import HttpError
 
-    service = get_service()
     try:
         service.events().delete(calendarId=config.GOOGLE_CALENDAR_ID, eventId=google_event_id).execute()
     except HttpError as exc:

@@ -1,0 +1,40 @@
+# Free-tier variant. AI now runs on OpenRouter's hosted free tier instead
+# of a local Ollama daemon, so nothing on your own machine needs to be
+# running for AI features to work — this is a single Render service.
+#
+# No `disk:` block: Render's free plan doesn't offer persistent disks, so
+# SQLite is ephemeral until you either upgrade or swap to an external
+# free Postgres (see DEPLOY-FREE.md's last section).
+
+services:
+  - type: web
+    name: brain-dump-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://YOUR-SITE.netlify.app     # <-- your real Netlify URL
+      - key: OPENROUTER_API_KEY
+        sync: false                                # set manually in the Render dashboard (secret)
+      - key: OPENROUTER_MODEL
+        value: meta-llama/llama-3.1-8b-instruct:free
+      # --- Auth + per-user Google Calendar (multi-user) ------------------
+      - key: JWT_SECRET_KEY
+        generateValue: true                        # Render generates a random secret once
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false                                # secret: encrypts stored Google tokens (see INTEGRATIONS.md)
+      - key: GOOGLE_LOGIN_CLIENT_ID
+        sync: false                                # Web OAuth client id (Sign in with Google); optional
+      - key: GOOGLE_CALENDAR_CLIENT_ID
+        sync: false                                # Web OAuth client id (Calendar); optional
+      - key: GOOGLE_CALENDAR_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALENDAR_REDIRECT_URI
+        value: https://YOUR-BACKEND.onrender.com/api/calendar/google/callback   # <-- must match Google Cloud Console
+      - key: FRONTEND_URL
+        value: https://YOUR-SITE.netlify.app       # <-- where the OAuth callback sends the browser back
+      - key: GOOGLE_CALENDAR_ID
+        value: primary
