@@ -30,6 +30,24 @@ gracefully if `credentials.json` isn't present yet.
 No billing setup is required for the Calendar API's free tier at
 personal-use volume.
 
+## Which calendar gets synced
+
+`GOOGLE_CALENDAR_ID` (`backend/config.py`) defaults to `"primary"` —
+the primary calendar of whichever Google account completes the OAuth
+consent step above, so for a single personal account there's usually
+nothing more to configure. Set it explicitly in `.env` (at the `ai_os/`
+root, next to `credentials.json`) if you want to target a specific
+calendar instead of whatever account signs in interactively — e.g.:
+
+```
+GOOGLE_CALENDAR_ID=somaskandan931@gmail.com
+```
+
+That value must be a calendar your authenticated account actually has
+access to (its own primary calendar, or one explicitly shared with
+it) — `sync_calendar()` will surface a normal Google API error if it
+doesn't.
+
 ## What's live
 
 - **`backend/integrations/google_calendar.py`** — OAuth (`_load_credentials()`

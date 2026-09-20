@@ -22,13 +22,18 @@ Milestone 8 adds a third:
   rule-based sentence if Ollama isn't running -- the analytics page
   should never break just because the local model is offline.
 
+Daily Planner narration (previously deferred, see below) follows the
+same shape as Weekly Review: backend/scheduler/morning.py already
+computes the actual plan (what got scheduled, what's next, what's at
+risk) in plain Python -- DAILY_PLANNER_SYSTEM only narrates "why" in
+one sentence, with the identical call_model()/OllamaError-fallback
+pattern.
+
 Deferred to later milestones (documented here so the eventual prompt
 lives in an obvious place, not built yet):
 - Scheduler / Priority Engine agents -- Milestone 5 (scheduler and
   planning engine); these will likely be classical ml/* models rather
   than LLM calls, per ARCHITECTURE.md's ai/ vs ml/ split.
-- Daily Planner narration -- the morning job already computes the plan;
-  narrating "why" in prose is future scope, not part of Milestone 8.
 
 Every agent here is instructed to return structured JSON only, and
 called through backend/ai/ollama_client.call_model_json() with
@@ -158,6 +163,37 @@ encouraging one-sentence observation instead of manufacturing a critique.
 def build_weekly_review_prompt(stats_json: str) -> str:
     """User-turn prompt for the Weekly Review / Reflection agent."""
     return f"This week's stats:\n{stats_json}"
+
+
+# --- Daily Planner narration -------------------------------------------------
+
+DAILY_PLANNER_SYSTEM = """You are the Daily Planner narrator inside a personal AI operating system.
+
+You will be given a JSON summary of today's already-computed plan: how \
+many focus sessions got scheduled, the single highest-priority "do next" \
+task (title, deadline, estimated hours), and any tasks currently at risk \
+of missing their deadline. Your only job is to write ONE short, direct, \
+second-person sentence (max ~25 words) telling the user what today looks \
+like and why.
+
+Rules:
+- Base it only on the data given -- do not invent tasks, counts, deadlines, \
+or numbers that aren't present.
+- Lead with the "do next" task when one is given -- that's what the user \
+should actually start with.
+- Mention an at-risk task only if at_risk_count > 0, and only as a brief \
+heads-up, not the focus of the sentence.
+- If there's nothing scheduled and no "do next" task, say so plainly and \
+suggest a brain dump or adding a task -- don't manufacture urgency that \
+isn't there.
+- Plain text only. No JSON, no markdown, no preamble like "Here's your \
+plan:" -- just the sentence itself.
+"""
+
+
+def build_daily_planner_prompt(plan_json: str) -> str:
+    """User-turn prompt for the Daily Planner narrator."""
+    return f"Today's plan:\n{plan_json}"
 
 
 # --- AI Execution Coach ----------------------------------------------------

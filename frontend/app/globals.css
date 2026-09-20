@@ -2,8 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* "Instrument panel" dark palette (default) and a light counterpart —
+   see components/theme/ThemeProvider.tsx for how the `.light` class
+   gets applied. Values are R G B triplets (no `#`, no commas) so
+   Tailwind's `rgb(var(--x) / <alpha-value>)` color functions in
+   tailwind.config.ts can still apply opacity modifiers like bg-base/50. */
 :root {
   color-scheme: dark;
+
+  --color-base: 10 11 15;
+  --color-surface: 20 22 28;
+  --color-surface-raised: 27 30 39;
+  --color-surface-overlay: 32 35 46;
+  --color-hairline: 38 42 53;
+  --color-ink: 231 233 238;
+  --color-ink-muted: 138 143 163;
+  --color-ink-faint: 86 91 107;
+  --color-signal: 69 217 166;
+  --color-signal-dim: 30 58 48;
+  --color-risk: 245 166 35;
+  --color-risk-dim: 58 46 20;
+  --color-critical: 240 85 74;
+  --color-critical-dim: 58 28 25;
+  --color-primary: 124 139 255;
+  --color-primary-dim: 35 39 72;
+  --color-primary-hover: 147 160 255;
+}
+
+.light {
+  color-scheme: light;
+
+  --color-base: 246 247 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 241 242 246;
+  --color-surface-overlay: 231 233 240;
+  --color-hairline: 225 227 234;
+  --color-ink: 20 22 28;
+  --color-ink-muted: 91 95 112;
+  --color-ink-faint: 146 150 166;
+  --color-signal: 28 154 115;
+  --color-signal-dim: 223 245 236;
+  --color-risk: 181 115 10;
+  --color-risk-dim: 252 234 203;
+  --color-critical: 196 59 49;
+  --color-critical-dim: 251 222 219;
+  --color-primary: 88 101 224;
+  --color-primary-dim: 231 233 251;
+  --color-primary-hover: 70 80 196;
 }
 
 * {
@@ -12,8 +57,8 @@
 
 html,
 body {
-  background: #0a0b0f;
-  color: #e7e9ee;
+  background: rgb(var(--color-base));
+  color: rgb(var(--color-ink));
 }
 
 body {
@@ -37,15 +82,15 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262a35;
+  background: rgb(var(--color-hairline));
   border-radius: 999px;
-  border: 2px solid #0a0b0f;
+  border: 2px solid rgb(var(--color-base));
 }
 
 /* Visible keyboard focus everywhere, styled to match the panel language
    instead of the browser default blue ring. */
 :focus-visible {
-  outline: 2px solid #7c8bff;
+  outline: 2px solid rgb(var(--color-primary));
   outline-offset: 2px;
   border-radius: 4px;
 }

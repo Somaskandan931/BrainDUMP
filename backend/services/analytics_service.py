@@ -25,9 +25,10 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.ai import episodic_memory
 from backend.ai.ollama_client import OllamaError, call_model
 from backend.ai.prompts import WEEKLY_REVIEW_SYSTEM, build_weekly_review_prompt
-from backend.models.enums import ProjectStatus, TaskStatus
+from backend.models.enums import EpisodicEventType, ProjectStatus, TaskStatus
 from backend.models.metrics import ProductivityMetric
 from backend.models.prediction import Prediction
 from backend.models.project import Project
@@ -125,6 +126,8 @@ def weekly_review(db: Session) -> WeeklyReviewResponse:
     }
     recommendation, ai_generated = _weekly_recommendation(stats)
 
+    _record_weekly_review_episode(db, period_start=period_start, period_end=today, stats=stats, recommendation=recommendation)
+
     return WeeklyReviewResponse(
         period_start=period_start,
         period_end=today,
@@ -140,6 +143,35 @@ def weekly_review(db: Session) -> WeeklyReviewResponse:
         project_progress=project_progress,
         recommendation=recommendation,
         ai_generated=ai_generated,
+    )
+
+
+def _record_weekly_review_episode(
+    db: Session, *, period_start: date_type, period_end: date_type, stats: dict, recommendation: str
+) -> None:
+    """
+    Episodic Memory (PRD §63): weekly_review() runs live on every GET, so
+    this can't just insert on every call -- episodic_memory.record_event()
+    dedupes on (event_type, occurred_on, title), keyed here on the
+    period's end date, so re-viewing the analytics page during the same
+    week updates the one row for that week instead of creating a new one.
+    Skipped entirely for a week with no activity at all -- an empty week
+    isn't an event worth remembering.
+    """
+    if stats["tasks_completed"] == 0 and stats["hours_worked"] == 0:
+        return
+    title = f"Weekly review: {period_start.isoformat()} to {period_end.isoformat()}"
+    summary = (
+        f"{stats['tasks_completed']}/{stats['tasks_planned']} tasks completed, "
+        f"{stats['hours_worked']}h worked. {recommendation}"
+    )
+    episodic_memory.record_event(
+        db,
+        EpisodicEventType.WEEKLY_REVIEW,
+        title=title,
+        summary=summary,
+        occurred_on=period_end,
+        payload={"period_start": period_start.isoformat(), **{k: v for k, v in stats.items() if k != "project_progress"}},
     )
 
 
@@ -276,6 +308,119 @@ def _category_display_name(category: Optional[str], project_names: dict[int, str
     if category.isdigit() and int(category) in project_names:
         return project_names[int(category)]
     return category
+
+
+def personal_calibration(db: Session) -> list[dict]:
+    """
+    The "Personal Calibration" view (review Priority 4/#17): the same
+    signed per-category bias estimation_error() reports above, but
+    filtered down to exactly what ml/calibration.py is actually applying
+    to new estimates right now — same MIN_SAMPLES/LOOKBACK_DAYS gate, so
+    this is never out of sync with what the estimator is really doing.
+    """
+    from backend.ml import calibration as calibration_module
+
+    project_names = {p.id: p.name for p in db.query(Project).all()}
+    categories = {
+        row[0]
+        for row in db.query(Prediction.category).filter(Prediction.category.isnot(None)).distinct().all()
+    }
+
+    results = []
+    for category in categories:
+        cal = calibration_module.get_calibration(db, category)
+        if cal is None:
+            continue
+        results.append(
+            {
+                "category": _category_display_name(category, project_names),
+                "bias_pct": cal.bias_pct,
+                "sample_count": cal.sample_count,
+                "confidence": cal.confidence,
+            }
+        )
+    results.sort(key=lambda c: abs(c["bias_pct"]), reverse=True)
+    return results
+
+
+ESTIMATION_ERROR_TREND_DAYS = 14
+
+
+def get_estimation_error_trend(
+    db: Session, days: int = ESTIMATION_ERROR_TREND_DAYS, now: Optional[datetime] = None
+) -> list[dict]:
+    """
+    Historical estimation error, one point per day — the natural
+    follow-up to the Execution Score trend, and the piece flagged as
+    "still open" after Weekly Review/estimation-error trends weren't
+    historized the same way.
+
+    Backed by ProductivityMetric.estimation_error_pct, the same
+    nightly-job-snapshotted rollup pattern get_execution_score_trend()
+    already uses, rather than recomputing every historical day's error
+    live (a day's estimation error is a property of what completed that
+    day, so a stored snapshot is the correct historical record, not a
+    live recompute against today's Predictions table).
+
+    Note on definition: this is unsigned average absolute error (how far
+    off, in either direction — see scheduler/nightly.py's _today_metrics),
+    not the signed under/over-estimate bias that estimation_error() above
+    reports. The two intentionally answer different questions ("how far
+    off, on average" vs. "which direction do you tend to be off"); this
+    trend is the former, matching what's actually persisted per day.
+
+    Today's point is filled in live (same unsigned-error formula, not
+    persisted) if the nightly job hasn't run yet today, so the trend line
+    doesn't have a visible gap at the most recent day.
+    """
+    now = now or datetime.now(timezone.utc)
+    today = now.date()
+    start = today - timedelta(days=days - 1)
+
+    rows = {
+        m.date: m
+        for m in db.query(ProductivityMetric)
+        .filter(ProductivityMetric.date >= start, ProductivityMetric.date <= today)
+        .all()
+    }
+
+    points: list[dict] = []
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        row = rows.get(day)
+        if row is not None and row.estimation_error_pct is not None:
+            average_error_pct = row.estimation_error_pct
+        elif day == today:
+            live = _live_estimation_error_pct(db, today)
+            if live is None:
+                continue  # nothing completed today yet — no point to plot
+            average_error_pct = live
+        else:
+            continue  # no snapshot for a past day -- skip rather than fabricate a number
+        points.append({"date": day, "average_error_pct": average_error_pct})
+
+    return points
+
+
+def _live_estimation_error_pct(db: Session, today: date_type) -> Optional[float]:
+    """Read-only mirror of scheduler/nightly.py's _today_metrics() error
+    calculation, for today's live trend point -- deliberately doesn't
+    write a ProductivityMetric row itself (that's the nightly job's job);
+    a GET route shouldn't have that side effect."""
+    day_start = datetime.combine(today, time.min, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+
+    completed_today = (
+        db.query(Task)
+        .filter(Task.status == TaskStatus.COMPLETED, Task.completed_at >= day_start, Task.completed_at < day_end)
+        .all()
+    )
+    errors = [
+        abs((t.actual_hours - t.estimated_hours) / t.estimated_hours) * 100
+        for t in completed_today
+        if t.actual_hours and t.estimated_hours
+    ]
+    return round(sum(errors) / len(errors), 2) if errors else None
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
+
+from backend.schemas._mixins import utc_iso
 
 BufferLevel = Literal["safe", "default", "aggressive"]
 BufferStatus = Literal["done", "safe", "tight", "impossible"]
@@ -30,6 +32,10 @@ class DeadlineBuffer(BaseModel):
     status: BufferStatus
     message: str
 
+    @field_serializer("target_date")
+    def _serialize_utc(self, dt):
+        return utc_iso(dt)
+
 
 class TaskDeadlinePlan(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -40,3 +46,7 @@ class TaskDeadlinePlan(BaseModel):
     estimated_hours: Optional[float]
     hours_remaining: float
     buffers: List[DeadlineBuffer]
+
+    @field_serializer("deadline")
+    def _serialize_utc(self, dt):
+        return utc_iso(dt)

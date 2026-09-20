@@ -19,7 +19,7 @@ const NAV = [
   { href: "/projects", label: "Projects", icon: SquareKanban },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/analytics", label: "Analytics", icon: LineChart },
-  { href: "/chat", label: "AI Chat", icon: MessagesSquare },
+  { href: "/chat", label: "AI Coach", icon: MessagesSquare },
 ];
 
 export function Sidebar() {

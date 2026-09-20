@@ -15,13 +15,27 @@ export function formatPercent(value: number | null | undefined, digits = 0): str
   return `${pct.toFixed(digits)}%`;
 }
 
+/**
+ * `new Date(iso)` treats a date-time string with no 'Z'/offset as *local*
+ * time (per the ECMA-262 Date Time String Format), not UTC. Every
+ * timestamp this backend emits is UTC under the hood (see
+ * schemas/schedule.DailyPlanRead._ensure_utc for one place that was
+ * silently losing its offset on the way out), so parsing one without
+ * this would shift it by the browser's UTC offset. Use this instead of
+ * `new Date(...)` for any server-supplied date-time string.
+ */
+export function parseServerDate(iso: string): Date {
+  const hasOffset = /Z$|[+-]\d\d:?\d\d$/.test(iso);
+  return new Date(hasOffset ? iso : `${iso}Z`);
+}
+
 export function formatDeadline(deadline: string | null): {
   label: string;
   urgent: boolean;
   overdue: boolean;
 } {
   if (!deadline) return { label: "No deadline", urgent: false, overdue: false };
-  const date = new Date(deadline);
+  const date = parseServerDate(deadline);
   const days = differenceInCalendarDays(date, new Date());
   const overdue = isPast(date) && days < 0;
 
@@ -33,7 +47,7 @@ export function formatDeadline(deadline: string | null): {
 }
 
 export function timeAgo(iso: string): string {
-  return formatDistanceToNowStrict(new Date(iso), { addSuffix: true });
+  return formatDistanceToNowStrict(parseServerDate(iso), { addSuffix: true });
 }
 
 export const IMPORTANCE_ORDER: Record<Importance, number> = {

@@ -20,13 +20,15 @@ Schedule Optimization -> Calendar Sync -> Dashboard Update
 
 ("Brain Dump -> ... -> Task Breakdown" for the free-text path is
 services/task_parser.py; "Task Breakdown" for the single-goal path is
-generate_from_goal() below. Dependency Detection and real Calendar
-Sync are not yet implemented — see backend/ai/AGENTS.md and Milestone 6
-respectively.)
+generate_from_goal() below. Dependency Detection is implemented as of
+this pass — see _record_sequential_dependencies() below; real Calendar
+Sync is not yet implemented — see Milestone 6.)
 """
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
@@ -34,10 +36,16 @@ from sqlalchemy.orm import Session
 
 from backend.ai.ollama_client import call_model_json
 from backend.ai.prompts import TASK_BREAKDOWN_SYSTEM, build_goal_breakdown_prompt
+from backend.models.dependency import Dependency
 from backend.models.enums import Importance
 from backend.models.project import Project
+from backend.models.settings import Setting
 from backend.models.task import Task
 from backend.services import deadline_service, scheduler_service
+
+logger = logging.getLogger(__name__)
+
+_MORNING_SUMMARY_SETTINGS_KEY = "last_morning_summary"  # must match scheduler/morning.py's _SETTINGS_KEY
 
 
 class PlannerServiceError(RuntimeError):
@@ -99,6 +107,11 @@ def generate_from_goal(db: Session, goal_text: str) -> Tuple[Project, List[Task]
     )
 
     created_tasks: List[Task] = []
+    # Parallel to created_tasks: the raw "order" value each task's item
+    # actually carried (or None if it didn't have one), kept alongside
+    # rather than re-derived from raw_tasks_sorted afterwards, since
+    # skipped no-title items would otherwise misalign the two lists.
+    created_orders: List[Optional[int]] = []
     for item in raw_tasks_sorted:
         title = (item.get("title") or "").strip()
         if not title:
@@ -121,6 +134,8 @@ def generate_from_goal(db: Session, goal_text: str) -> Tuple[Project, List[Task]
         )
         db.add(task)
         created_tasks.append(task)
+        order = item.get("order")
+        created_orders.append(order if isinstance(order, int) else None)
 
     if not created_tasks:
         db.rollback()
@@ -131,7 +146,42 @@ def generate_from_goal(db: Session, goal_text: str) -> Tuple[Project, List[Task]
     for task in created_tasks:
         db.refresh(task)
 
+    _record_sequential_dependencies(db, created_tasks, created_orders)
+
     return project, created_tasks
+
+
+def _record_sequential_dependencies(
+    db: Session, created_tasks: List[Task], created_orders: List[Optional[int]]
+) -> None:
+    """Dependency Detection (PRD §16 AI Processing Pipeline step,
+    previously unimplemented): chain each task to the one immediately before it in
+    the model's suggested order -- e.g. "Deploy" depends on "Build",
+    which depends on "Research".
+
+    Deliberately conservative: only chains a pair when *both* items
+    carried an explicit, strictly-increasing "order" value from the
+    model. Items missing "order" default to 0 for display sorting
+    (see _order_key above) but that's a display fallback, not the model
+    asserting a dependency -- chaining those together would fabricate a
+    dependency the model never claimed. If the model didn't supply real
+    ordering for at least two tasks, nothing is recorded.
+    """
+    has_signal = sum(1 for o in created_orders if o is not None) >= 2
+    if not has_signal:
+        return
+
+    for i in range(1, len(created_tasks)):
+        prev_order = created_orders[i - 1]
+        curr_order = created_orders[i]
+        if prev_order is not None and curr_order is not None and curr_order > prev_order:
+            db.add(
+                Dependency(
+                    task_id=created_tasks[i].id,
+                    depends_on_task_id=created_tasks[i - 1].id,
+                )
+            )
+    db.commit()
 
 
 def get_next_task(db: Session) -> Optional[Task]:
@@ -147,3 +197,26 @@ def get_next_task(db: Session) -> Optional[Task]:
 def trigger_replan(db: Session) -> dict:
     """Milestone 5: thin wrapper around deadline_service.replan()."""
     return deadline_service.replan(db)
+
+
+def get_daily_summary(db: Session) -> dict:
+    """
+    Reads back scheduler/morning.py's cached last run (Setting key
+    _MORNING_SUMMARY_SETTINGS_KEY) for GET /api/planner/today. This is a
+    read of the last morning job's output, not a live recomputation --
+    see that module's docstring for why the narration in particular is
+    generated once per run rather than on every request.
+
+    Returns an all-null/empty-default dict (never raises) when the
+    morning job hasn't run yet at all -- a brand-new install with no
+    cached summary is a valid state, not an error, same as
+    get_next_task() returning None instead of 404ing.
+    """
+    setting = db.query(Setting).filter(Setting.key == _MORNING_SUMMARY_SETTINGS_KEY).first()
+    if setting is None or not setting.value:
+        return {}
+    try:
+        return json.loads(setting.value)
+    except (TypeError, ValueError) as exc:
+        logger.warning("planner_service: couldn't parse cached morning summary (%s)", exc)
+        return {}

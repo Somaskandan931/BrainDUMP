@@ -34,6 +34,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.ai import embeddings, episodic_memory, long_term_memory, semantic_memory
+from backend.ai.memory import working_memory
 from backend.ai.ollama_client import OllamaError, call_model
 from backend.ai.prompts import EXECUTION_COACH_SYSTEM, build_execution_coach_prompt
 from backend.models.enums import TaskStatus
@@ -66,12 +68,20 @@ _DEADLINE_QUESTION_PATTERNS = re.compile(
     r"finish .* by)\b",
     re.IGNORECASE,
 )
+# Bare pronoun references ("can I finish IT by Friday?", "what about THAT
+# ONE?") with no task-like noun phrase to match against -- these should
+# resolve against working memory's current task, not the embedding index,
+# since there's no real text to embed.
+_PRONOUN_ONLY_PATTERN = re.compile(
+    r"\b(it|that( one)?|this( one)?|the same (task|thing|one))\b", re.IGNORECASE
+)
 
 
 def _handle_next_task(db: Session) -> CoachResponse:
     task = scheduler_service.get_next_task(db)
     if task is None:
         return CoachResponse("next_task", "Nothing active on your list right now — you're clear.")
+    working_memory.set_current_task(task.id, task.title, task.project_id)
     return CoachResponse(
         "next_task",
         f'Do this next: "{task.title}"' + (f" (due {task.deadline:%b %d})" if task.deadline else ""),
@@ -103,12 +113,18 @@ def _handle_replan(db: Session) -> CoachResponse:
 
 def _find_referenced_task(db: Session, message: str) -> Optional[Task]:
     """
-    Best-effort match: find an active task with a deadline whose title
-    shares a significant word with the user's message (e.g. "internship
-    report" matching a message about "my internship report"). Not fuzzy
-    matching/embeddings -- a real semantic match is AI Memory territory
-    (ai/embeddings.py, not yet built) -- but good enough to ground a
-    deadline answer in a real task instead of guessing.
+    Find the active, deadline-bearing task the user's message is about.
+
+    Two paths:
+    - Bare pronoun ("can I finish it by Friday?") with no other
+      task-like content -- resolve against working memory's current
+      task (the last one an agent surfaced this session), since there's
+      no real text to match on.
+    - Otherwise, semantic match via ai/embeddings.py (sentence-transformers
+      when available, TF-IDF fallback otherwise) so "the CV assignment"
+      correctly matches a task titled "Finish resume for internship"
+      rather than requiring literal shared words, which the old
+      word-overlap heuristic this replaced could not do.
     """
     candidates = (
         db.query(Task)
@@ -118,14 +134,19 @@ def _find_referenced_task(db: Session, message: str) -> Optional[Task]:
     if not candidates:
         return None
 
-    message_words = {w.lower() for w in re.findall(r"[a-zA-Z]{4,}", message)}
-    best, best_overlap = None, 0
-    for task in candidates:
-        title_words = {w.lower() for w in re.findall(r"[a-zA-Z]{4,}", task.title)}
-        overlap = len(message_words & title_words)
-        if overlap > best_overlap:
-            best, best_overlap = task, overlap
-    return best if best_overlap > 0 else None
+    match = embeddings.find_best_task_match(message, candidates)
+    if match is not None:
+        return match
+
+    # No semantic match cleared the threshold. If the message referred to
+    # a task only by pronoun ("can I finish it in time?" — "finish"/"time"
+    # are real words but not a task description, so nothing should have
+    # matched), resolve against whatever task working memory last had in
+    # focus instead of giving up.
+    if _PRONOUN_ONLY_PATTERN.search(message) and working_memory.has_current_task():
+        return next((t for t in candidates if t.id == working_memory.current_task_id), None)
+
+    return None
 
 
 def _handle_deadline_question(db: Session, message: str) -> Optional[CoachResponse]:
@@ -136,6 +157,7 @@ def _handle_deadline_question(db: Session, message: str) -> Optional[CoachRespon
     plan = deadline_service.compute_deadline_plan(db, task)
     deadline_service.persist_deadline_plan(db, task, plan)
     db.commit()
+    working_memory.set_current_task(task.id, task.title, task.project_id)
 
     default_buffer = next((b for b in plan["buffers"] if b["level"] == "default"), plan["buffers"][0])
     probability_pct = round((task.completion_probability or 0.0) * 100)
@@ -163,11 +185,40 @@ def _build_context_snapshot(db: Session) -> dict:
     at_risk = deadline_service.detect_at_risk_tasks(db, now)
     next_task = scheduler_service.get_next_task(db)
 
-    return {
+    snapshot = {
         "active_task_count": len(active),
         "at_risk_tasks": [{"title": t.title, "deadline": t.deadline.isoformat() if t.deadline else None} for t in at_risk[:5]],
         "next_task": next_task.title if next_task else None,
     }
+    # Short-term memory (PRD §63): recent turns and whatever task was last
+    # in focus, so a follow-up question in the same session reads as a
+    # continuation instead of the coach losing the thread every message.
+    recent = working_memory.recent_context_text(limit=4)
+    if recent:
+        snapshot["recent_conversation"] = recent
+    if working_memory.has_current_task():
+        snapshot["current_task"] = working_memory.current_task_title
+
+    # Episodic + Long-Term memory (PRD §63): what's already happened
+    # (weekly reviews, completed projects, past replans) and durable
+    # patterns about how this user works (peak hours, estimation bias).
+    # Both are best-effort -- a fresh install with no history yet just
+    # contributes an empty string, not an error.
+    episodic_context = episodic_memory.recall_context_text(db, limit=3)
+    if episodic_context:
+        snapshot["recent_history"] = episodic_context
+    long_term_context = long_term_memory.recall_context_text(db)
+    if long_term_context:
+        snapshot["user_patterns"] = long_term_context
+
+    # Semantic memory (PRD §63): recurring workflows -- "this looks like
+    # a repeat of X" -- so the coach can say "last time you did this it
+    # took N hours" instead of treating every project as unprecedented.
+    semantic_context = semantic_memory.recall_context_text(db)
+    if semantic_context:
+        snapshot["recurring_workflows"] = semantic_context
+
+    return snapshot
 
 
 def _handle_fallback(db: Session, message: str) -> CoachResponse:
@@ -220,17 +271,21 @@ def handle_message(db: Session, message: str) -> CoachResponse:
     if not message:
         return CoachResponse("declined", "Tell me what's on your mind, or ask what to work on next.")
 
+    working_memory.remember_turn("user", message)
+
     if _NEXT_TASK_PATTERNS.search(message):
-        return _handle_next_task(db)
+        response = _handle_next_task(db)
+    elif _REPLAN_PATTERNS.search(message):
+        response = _handle_replan(db)
+    elif _DEADLINE_QUESTION_PATTERNS.search(message):
+        response = _handle_deadline_question(db, message)
+        if response is None:
+            # No matching task found — fall through to the general coach
+            # reply rather than a dead end, since the question was still
+            # legitimate.
+            response = _handle_fallback(db, message)
+    else:
+        response = _handle_fallback(db, message)
 
-    if _REPLAN_PATTERNS.search(message):
-        return _handle_replan(db)
-
-    if _DEADLINE_QUESTION_PATTERNS.search(message):
-        result = _handle_deadline_question(db, message)
-        if result is not None:
-            return result
-        # No matching task found — fall through to the general coach reply
-        # rather than a dead end, since the question was still legitimate.
-
-    return _handle_fallback(db, message)
+    working_memory.remember_turn("coach", response.message, agent=response.agent)
+    return response

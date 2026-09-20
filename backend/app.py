@@ -10,6 +10,7 @@ together.
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,7 +20,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend import config
 from backend.database import init_db
-from backend.api import projects, tasks, planner, analytics, calendar, todoist, notifications, chat
+from backend.api import (
+    projects,
+    tasks,
+    planner,
+    analytics,
+    calendar,
+    todoist,
+    notifications,
+    chat,
+    memory,
+    schedule,
+    settings as settings_api,
+    demo,
+)
 from backend.scheduler.morning import run_morning_job
 from backend.scheduler.nightly import run_nightly_job
 
@@ -56,10 +70,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Local Next.js dev server only — single-user, local-first app.
+# Single-user, local-first app — but deployable, so the allowed origin(s)
+# come from ALLOWED_ORIGINS (comma-separated) instead of being hardcoded.
+# Defaults to the local Next.js dev server when unset.
+_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,6 +95,10 @@ app.include_router(calendar.router, prefix="/api/calendar", tags=["calendar"])
 app.include_router(todoist.router, prefix="/api/todoist", tags=["todoist"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(memory.router, prefix="/api/memory", tags=["memory"])
+app.include_router(schedule.router, prefix="/api/schedule", tags=["schedule"])
+app.include_router(settings_api.router, prefix="/api/settings", tags=["settings"])
+app.include_router(demo.router, prefix="/api/demo", tags=["demo"])
 
 
 @app.get("/health", tags=["meta"])

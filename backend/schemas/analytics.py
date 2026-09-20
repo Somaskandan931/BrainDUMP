@@ -61,6 +61,15 @@ class EstimationErrorResponse(BaseModel):
     by_category: List[CategoryEstimationError]
 
 
+class EstimationErrorTrendPoint(BaseModel):
+    date: date_type
+    average_error_pct: float
+
+
+class EstimationErrorTrendResponse(BaseModel):
+    points: List[EstimationErrorTrendPoint]
+
+
 class StreaksResponse(BaseModel):
     current_streak_days: int
     longest_streak_days: int

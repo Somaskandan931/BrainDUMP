@@ -20,6 +20,15 @@ median, once enough training data exists. The model is loaded lazily and
 optionally: no persisted MODELS_DIR/estimator.pkl (fresh install, or
 ml/trainer.py hasn't hit its minimum sample threshold yet) just skips
 this rung entirely, same as any other tier with nothing to offer.
+
+Personal calibration: whatever the ladder above produces is a *generic*
+estimate — it doesn't yet know that this particular user runs long on
+research tasks or short on admin ones. ml/calibration.py supplies that
+signed per-category bias (from services/analytics_service's estimation-
+error tracking), applied here as the final step before the estimate is
+returned and logged, so the Prediction row that gets compared against
+reality later is the personalized number, not the generic one — see
+that module's docstring for why this is the project's "closed loop".
 """
 
 from __future__ import annotations
@@ -31,6 +40,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from backend import config
+from backend.ml import calibration
 from backend.models.enums import Importance
 from backend.models.prediction import Prediction
 from backend.models.task import Task
@@ -119,34 +129,68 @@ def _completed_hours(db: Session, *, project_id: Optional[int] = None, importanc
     return [row[0] for row in query.all() if row[0] is not None and row[0] > 0]
 
 
-def estimate_hours(db: Session, task: Task) -> tuple[float, float]:
-    """
-    Return (predicted_hours, confidence_score) for `task`.
-
-    Tries, in order: the user's own completed tasks in the same project,
-    then completed tasks of the same importance tier (any project), then
-    a flat importance-based default. Confidence reflects how much of that
-    ladder had to be climbed and how many samples backed the estimate.
-    """
+def _base_estimate_hours(db: Session, task: Task) -> tuple[float, float, str]:
+    """The generic (pre-calibration) estimate ladder: (hours, confidence, tier_name)."""
     if task.project_id is not None:
         samples = _completed_hours(db, project_id=task.project_id)
         if samples:
             predicted = statistics.median(samples)
             confidence = min(1.0, 0.5 + 0.1 * len(samples)) if len(samples) < _CONFIDENT_SAMPLE_SIZE else 1.0
-            return round(predicted, 2), round(confidence, 2)
+            return round(predicted, 2), round(confidence, 2), "project_history"
 
     trained = _predict_from_trained_model(task)
     if trained is not None:
-        return trained
+        predicted, confidence = trained
+        return predicted, confidence, "trained_model"
 
     samples = _completed_hours(db, importance=task.importance)
     if samples:
         predicted = statistics.median(samples)
         confidence = min(0.7, 0.3 + 0.08 * len(samples))
-        return round(predicted, 2), round(confidence, 2)
+        return round(predicted, 2), round(confidence, 2), "importance_history"
 
     predicted = DEFAULT_HOURS_BY_IMPORTANCE.get(task.importance, config.DEFAULT_TASK_HOURS)
-    return round(predicted, 2), 0.2
+    return round(predicted, 2), 0.2, "default"
+
+
+def estimate_hours(db: Session, task: Task) -> tuple[float, float]:
+    """
+    Return (predicted_hours, confidence_score) for `task` — the base
+    ladder's estimate, personally calibrated against this task's
+    category (see ml/calibration.py). This is the number that gets
+    stored on the task and logged to Prediction; use
+    estimate_hours_detailed() when you need to show the base estimate
+    and the calibration separately (e.g. explanation_service.py).
+    """
+    base, confidence, _tier = _base_estimate_hours(db, task)
+    cal = calibration.get_calibration(db, calibration.resolve_category(task))
+    calibrated, _applied_pct = calibration.apply_calibration(base, cal)
+    return calibrated, confidence
+
+
+def estimate_hours_detailed(db: Session, task: Task) -> dict:
+    """
+    Full breakdown behind a single estimate, for the "why this
+    estimate?" explanation: which tier of the ladder produced the base
+    number, the category-level calibration (if any) that was applied on
+    top of it, and the final calibrated figure. Read-only — doesn't
+    touch task or log a Prediction (ensure_estimate still owns that).
+    """
+    base, confidence, tier = _base_estimate_hours(db, task)
+    category = calibration.resolve_category(task)
+    cal = calibration.get_calibration(db, category)
+    calibrated, applied_pct = calibration.apply_calibration(base, cal)
+
+    return {
+        "base_hours": base,
+        "base_tier": tier,
+        "confidence": confidence,
+        "category": category,
+        "calibration_bias_pct": cal.bias_pct if cal else None,
+        "calibration_sample_count": cal.sample_count if cal else 0,
+        "calibration_applied_pct": applied_pct,
+        "calibrated_hours": calibrated,
+    }
 
 
 def ensure_estimate(db: Session, task: Task, *, log: bool = True) -> Task:
@@ -165,7 +209,7 @@ def ensure_estimate(db: Session, task: Task, *, log: bool = True) -> Task:
             db.add(
                 Prediction(
                     task_id=task.id,
-                    category=str(task.project_id) if task.project_id else task.importance.value,
+                    category=calibration.resolve_category(task),
                     predicted_hours=task.estimated_hours,
                 )
             )

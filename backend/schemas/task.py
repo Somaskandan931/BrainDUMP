@@ -12,9 +12,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.models.enums import TaskStatus, Importance, EnergyLevel
+from backend.schemas._mixins import utc_iso
 
 
 # --- Subtask -----------------------------------------------------------
@@ -43,6 +44,10 @@ class SubtaskRead(BaseModel):
     completed_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("completed_at", "created_at", "updated_at")
+    def _serialize_utc(self, dt):
+        return utc_iso(dt)
 
 
 # --- Task ----------------------------------------------------------------
@@ -101,3 +106,7 @@ class TaskRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     subtasks: List[SubtaskRead] = []
+
+    @field_serializer("deadline", "completed_at", "recommended_deadline", "latest_safe_start", "created_at", "updated_at")
+    def _serialize_utc(self, dt):
+        return utc_iso(dt)

@@ -12,34 +12,34 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        base: "#0A0B0F",
+        base: "rgb(var(--color-base) / <alpha-value>)",
         surface: {
-          DEFAULT: "#14161C",
-          raised: "#1B1E27",
-          overlay: "#20232E",
+          DEFAULT: "rgb(var(--color-surface) / <alpha-value>)",
+          raised: "rgb(var(--color-surface-raised) / <alpha-value>)",
+          overlay: "rgb(var(--color-surface-overlay) / <alpha-value>)",
         },
-        hairline: "#262A35",
+        hairline: "rgb(var(--color-hairline) / <alpha-value>)",
         ink: {
-          DEFAULT: "#E7E9EE",
-          muted: "#8A8FA3",
-          faint: "#565B6B",
+          DEFAULT: "rgb(var(--color-ink) / <alpha-value>)",
+          muted: "rgb(var(--color-ink-muted) / <alpha-value>)",
+          faint: "rgb(var(--color-ink-faint) / <alpha-value>)",
         },
         signal: {
-          DEFAULT: "#45D9A6",
-          dim: "#1E3A30",
+          DEFAULT: "rgb(var(--color-signal) / <alpha-value>)",
+          dim: "rgb(var(--color-signal-dim) / <alpha-value>)",
         },
         risk: {
-          DEFAULT: "#F5A623",
-          dim: "#3A2E14",
+          DEFAULT: "rgb(var(--color-risk) / <alpha-value>)",
+          dim: "rgb(var(--color-risk-dim) / <alpha-value>)",
         },
         critical: {
-          DEFAULT: "#F0554A",
-          dim: "#3A1C19",
+          DEFAULT: "rgb(var(--color-critical) / <alpha-value>)",
+          dim: "rgb(var(--color-critical-dim) / <alpha-value>)",
         },
         primary: {
-          DEFAULT: "#7C8BFF",
-          dim: "#232748",
-          hover: "#93A0FF",
+          DEFAULT: "rgb(var(--color-primary) / <alpha-value>)",
+          dim: "rgb(var(--color-primary-dim) / <alpha-value>)",
+          hover: "rgb(var(--color-primary-hover) / <alpha-value>)",
         },
       },
       fontFamily: {

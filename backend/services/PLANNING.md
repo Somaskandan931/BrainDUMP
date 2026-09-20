@@ -25,13 +25,28 @@ Calculation, Schedule Optimization, and dynamic replanning, backing
   computes working-hour slots over a horizon and carves out existing
   `CalendarEvent` rows; `pack_tasks_into_schedule()` greedily assigns
   priority-ordered tasks into the earliest slot that fits, splitting
-  leftover time into a new slot; `schedule_pending_tasks()` is the full
-  orchestration (estimate -> prioritize -> pack) called by the morning job
-  and by `replan()`; `get_next_task()` scores every active task fresh
-  against right now and returns the single highest-priority one;
-  `complete_task()` is the multi-step "mark done -> derive actual_hours
-  from sessions -> resolve the pending Prediction" flow, moved here from
-  `api/tasks.py` to keep routes thin.
+  leftover time into a new slot; `_cluster_similar_tasks()` (Rule 9:
+  "Group similar work together") reorders that priority-ordered list so
+  same-project tasks whose priority scores are within
+  `config.CLUSTER_PRIORITY_TOLERANCE` of each other land adjacent,
+  instead of interleaved in whatever order they happened to score in —
+  see "Design decisions" below for why project_id is the grouping key;
+  `schedule_pending_tasks()` is the full orchestration (estimate ->
+  prioritize -> cluster -> pack) called by the morning job and by
+  `replan()`; `get_next_task()` scores every active task fresh against
+  right now and returns the single highest-priority one; `complete_task()`
+  is the multi-step "mark done -> derive actual_hours from sessions ->
+  resolve the pending Prediction -> check for a milestone" flow, moved
+  here from `api/tasks.py` to keep routes thin.
+- **`backend/ai/long_term_memory.py`** — `derived_energy_pattern()` feeds
+  learned `preferred_work_hours` back into the scheduler: both
+  `schedule_pending_tasks()` and `get_next_task()` resolve it via
+  `scheduler_service._resolve_energy_pattern()` and pass it through to
+  `compute_priority_score()`/`energy_fit_at_hour()` in place of
+  `config.DEFAULT_ENERGY_PATTERN`'s static curve, once there's enough
+  logged `WorkSession` history behind it to trust (see that function's
+  own sample-size guard). Below that bar, scheduling is unaffected — the
+  profile stays advisory-only exactly as before this was wired up.
 - **`backend/services/deadline_service.py`** — `detect_at_risk_tasks()`
   checks whether a task's remaining estimated hours can actually fit in the
   free calendar time between now and its deadline. `replan()` is the full
@@ -97,6 +112,15 @@ Calculation, Schedule Optimization, and dynamic replanning, backing
   yet, and inventing an estimate-as-actual would poison the training set
   `Prediction` rows are collecting for future estimator training (see
   `ANALYTICS.md`).
+- **Rule 9 clustering groups by `project_id`, not a task category/label.**
+  `models/task.py` has no labels or category field (the same gap
+  `ai/long_term_memory.py` documents for why "frequently used labels"
+  was dropped from the Long-Term Memory profile) — so `project_id` is
+  the only real "kind of work" signal available, the same one Rule 10 /
+  `compute_context_switch_cost()` already uses. `_cluster_similar_tasks()`
+  only reorders within priority ties (`config.CLUSTER_PRIORITY_TOLERANCE`
+  wide) — it never lets "group similar work" push a genuinely
+  higher-priority task from a different project further down the day.
 - **SQLite naive/aware datetime round-tripping.** `DateTime(timezone=True)`
   columns don't survive SQLite's string storage with their tzinfo intact —
   every value read back is naive. `scheduler_service._as_utc()` normalizes
@@ -119,3 +143,31 @@ correctly moved on to the next-highest-priority one. Separately verified
 `detect_at_risk_tasks()` flags an unrealistic task (20 estimated hours, due
 in an hour) as at-risk and — because it's HIGH importance — correctly does
 *not* auto-demote it, leaving it in `at_risk_tasks` in the response.
+
+Separately (once this sandbox had `sqlalchemy`/`ollama`/`apscheduler`
+installed, so this ran against a real SQLite engine rather than only
+`py_compile`): `_cluster_similar_tasks()` reproduces the PRD's own worked
+example directly (`Coding, Email, Coding, Reading, Coding` ->
+`Coding, Coding, Coding, Email, Reading`), confirmed a genuinely
+higher-priority different-project task is never displaced across a tie
+band boundary, and confirmed `None`-project tasks bucket together too.
+End-to-end: created 5 tasks interleaved across 2 real `Project` rows with
+near-equal priority and ran the actual `schedule_pending_tasks()` against
+an in-memory DB — the same-project tasks came out contiguous in the real
+returned schedule order, not just in the intermediate list.
+
+Separately re-ran both of the above against a fresh in-memory SQLite engine
+end to end (previously only `py_compile`-checked, no dependencies
+installed): completing all 4 tasks of a real `Project` produced exactly
+the 25/50/75/100% `EpisodicMemory` rows in order; `derived_energy_pattern()`
+correctly returned `None` under the 10-session sample-size bar and, above
+it, produced the expected high/medium/low curve around the learned peak
+hour. Also hit `GET /api/planner/today` through a real `TestClient`: on an
+empty `settings` table it returns the all-null/zero default response
+(200, not 404/500) exactly as designed; after seeding a `last_morning_summary`
+row shaped like `scheduler/morning.py`'s real output — including extra keys
+(`scheduled_task_ids`, `calendar_sync`) that aren't part of the response
+schema — the endpoint correctly ignores the extras and returns the
+narration/next-task fields untouched, confirming the frontend's
+`useDailySummary()` hook (see `FRONTEND.md`) gets exactly the payload it
+expects.

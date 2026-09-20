@@ -60,3 +60,19 @@ class SyncStatus(str, enum.Enum):
     NOT_SYNCED = "not_synced"
     SYNCED = "synced"
     ERROR = "error"
+
+
+class EpisodicEventType(str, enum.Enum):
+    """PRD §63 Episodic Memory categories -- see models/memory.py."""
+    WEEKLY_REVIEW = "weekly_review"
+    PROJECT_COMPLETED = "project_completed"
+    MILESTONE = "milestone"
+    PLANNING_DECISION = "planning_decision"
+
+
+class SemanticRelationType(str, enum.Enum):
+    """PRD §63 Semantic Memory categories -- see models/memory.py and
+    ai/semantic_memory.py for why "project relationships" and
+    "dependencies" collapse into these two rather than four."""
+    PROJECT_TEMPLATE = "project_template"
+    RECURRING_WORKFLOW = "recurring_workflow"

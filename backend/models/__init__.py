@@ -12,6 +12,8 @@ from backend.models.calendar_event import CalendarEvent
 from backend.models.prediction import Prediction
 from backend.models.metrics import ProductivityMetric
 from backend.models.settings import Setting
+from backend.models.memory import EpisodicMemory, SemanticMemory
+from backend.models.daily_plan import DailyPlan
 
 __all__ = [
     "Project",
@@ -23,4 +25,7 @@ __all__ = [
     "Prediction",
     "ProductivityMetric",
     "Setting",
+    "EpisodicMemory",
+    "SemanticMemory",
+    "DailyPlan",
 ]

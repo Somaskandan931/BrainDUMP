@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { Flame, LineChart, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Clock, Flame, LineChart, Repeat, Sparkles, Trophy, TrendingDown, TrendingUp } from "lucide-react";
 import { ReactNode } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -9,8 +9,9 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { WorkloadHeatmap } from "@/components/dashboard/WorkloadHeatmap";
-import { analyticsApi } from "@/services/api";
-import { ApiError, EstimationBias } from "@/services/types";
+import { analyticsApi, memoryApi } from "@/services/api";
+import { useCalibration } from "@/hooks/useExplain";
+import { ApiError, EpisodicEventType, EstimationBias, SemanticRelationType } from "@/services/types";
 
 function PanelShell({
   eyebrow,
@@ -54,7 +55,7 @@ function WeeklyReviewPanel() {
 
   return (
     <PanelShell
-      eyebrow="GET /api/analytics/weekly-review"
+      eyebrow="Analytics engine"
       title="Weekly review"
       isLoading={isLoading}
       error={error}
@@ -128,7 +129,7 @@ function EstimationErrorPanel() {
 
   return (
     <PanelShell
-      eyebrow="GET /api/analytics/estimation-error"
+      eyebrow="Estimator"
       title="Estimation accuracy"
       isLoading={isLoading}
       error={error}
@@ -173,6 +174,52 @@ function EstimationErrorPanel() {
   );
 }
 
+function EstimationErrorTrendPanel() {
+  const { data, error, isLoading } = useSWR("estimation-error-trend", analyticsApi.estimationErrorTrend, {
+    shouldRetryOnError: false,
+  });
+
+  const points = data?.points ?? [];
+  const maxError = Math.max(1, ...points.map((p) => p.average_error_pct));
+  const today = points[points.length - 1];
+
+  return (
+    <PanelShell
+      eyebrow="Estimator"
+      title="Estimation error trend"
+      isLoading={isLoading}
+      error={error}
+      empty={points.length === 0}
+      emptyDescription="Complete a few tasks with logged hours over a couple of days and your estimation trend shows up here."
+    >
+      {points.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex h-24 items-end gap-1.5">
+            {points.map((p) => (
+              <div key={p.date} className="flex flex-1 flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-sm bg-risk/70"
+                  style={{ height: `${Math.max(4, (p.average_error_pct / maxError) * 100)}%` }}
+                  title={`${p.date} — off by ${p.average_error_pct}% on average`}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-ink-faint">
+            <span>{points[0]?.date.slice(5)}</span>
+            <span>{points[points.length - 1]?.date.slice(5)}</span>
+          </div>
+          {today && (
+            <p className="text-[12px] text-ink-muted">
+              Today: <span className="tnum text-ink">{today.average_error_pct}%</span> off on average
+            </p>
+          )}
+        </div>
+      )}
+    </PanelShell>
+  );
+}
+
 function StreaksPanel() {
   const { data, error, isLoading } = useSWR("streaks", analyticsApi.streaks, {
     shouldRetryOnError: false,
@@ -180,7 +227,7 @@ function StreaksPanel() {
 
   return (
     <PanelShell
-      eyebrow="GET /api/analytics/streaks"
+      eyebrow="Analytics engine"
       title="Streaks"
       isLoading={isLoading}
       error={error}
@@ -220,7 +267,7 @@ function ProductivityHoursPanel() {
 
   return (
     <PanelShell
-      eyebrow="GET /api/analytics/productivity-hours"
+      eyebrow="Analytics engine"
       title="Productive hours"
       isLoading={isLoading}
       error={error}
@@ -257,6 +304,264 @@ function ProductivityHoursPanel() {
   );
 }
 
+function ExecutionScoreTrendPanel() {
+  const { data, error, isLoading } = useSWR("execution-score-trend", analyticsApi.executionScoreTrend, {
+    shouldRetryOnError: false,
+  });
+
+  const TREND_TONE: Record<string, string> = {
+    excellent: "bg-signal",
+    healthy: "bg-primary",
+    busy: "bg-risk",
+    high_risk: "bg-risk",
+    impossible: "bg-critical",
+  };
+
+  const points = data?.points ?? [];
+  const today = points[points.length - 1];
+
+  return (
+    <PanelShell
+      eyebrow="Analytics engine"
+      title="Execution score trend"
+      isLoading={isLoading}
+      error={error}
+      empty={points.length === 0}
+      emptyDescription="Once the nightly job has run for a day or two, your Execution Score history shows up here."
+    >
+      {points.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex h-24 items-end gap-1.5">
+            {points.map((p) => (
+              <div key={p.date} className="flex flex-1 flex-col items-center gap-1">
+                <div
+                  className={`w-full rounded-sm ${TREND_TONE[p.band] ?? "bg-primary"}`}
+                  style={{ height: `${Math.max(4, p.score)}%` }}
+                  title={`${p.date} — ${p.score}/100 (${p.band.replace("_", " ")})`}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-ink-faint">
+            <span>{points[0]?.date.slice(5)}</span>
+            <span>{points[points.length - 1]?.date.slice(5)}</span>
+          </div>
+          {today && (
+            <p className="text-[12px] text-ink-muted">
+              Today: <span className="tnum text-ink">{today.score}/100</span> ·{" "}
+              {today.band.replace("_", " ")}
+            </p>
+          )}
+        </div>
+      )}
+    </PanelShell>
+  );
+}
+
+function EpisodicMemoryPanel() {
+  const { data, error, isLoading } = useSWR("episodic-memory", () => memoryApi.episodic(8), {
+    shouldRetryOnError: false,
+  });
+
+  const EVENT_LABEL: Record<EpisodicEventType, string> = {
+    weekly_review: "Weekly review",
+    project_completed: "Project completed",
+    milestone: "Milestone",
+    planning_decision: "Replan",
+  };
+  const EVENT_TONE: Record<EpisodicEventType, "signal" | "risk" | "neutral"> = {
+    weekly_review: "neutral",
+    project_completed: "signal",
+    milestone: "signal",
+    planning_decision: "risk",
+  };
+
+  const events = data?.events ?? [];
+
+  return (
+    <PanelShell
+      eyebrow="Memory engine"
+      title="Memory — recent history"
+      isLoading={isLoading}
+      error={error}
+      empty={events.length === 0}
+      emptyDescription="Completed projects, weekly reviews, and replans will show up here as they happen."
+    >
+      <div className="flex flex-col gap-2">
+        {events.map((event) => (
+          <div
+            key={event.id}
+            className="flex flex-col gap-0.5 rounded-md border border-hairline bg-surface-raised px-2.5 py-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12px] text-ink">{event.title}</span>
+              <Badge tone={EVENT_TONE[event.event_type]}>{EVENT_LABEL[event.event_type]}</Badge>
+            </div>
+            <p className="text-[11px] text-ink-faint">{event.summary}</p>
+          </div>
+        ))}
+      </div>
+    </PanelShell>
+  );
+}
+
+function LongTermProfilePanel() {
+  const { data, error, isLoading } = useSWR("long-term-memory", memoryApi.longTerm, {
+    shouldRetryOnError: false,
+  });
+
+  const empty =
+    !!data &&
+    data.preferred_work_hours.length === 0 &&
+    data.estimation_accuracy.sample_count === 0 &&
+    data.recent_completed_projects.length === 0;
+
+  return (
+    <PanelShell
+      eyebrow="Memory engine"
+      title="Memory — what BrainDUMP has learned"
+      isLoading={isLoading}
+      error={error}
+      empty={empty}
+      emptyDescription="Once the nightly job has run for a few days, your work patterns show up here."
+    >
+      {data && (
+        <div className="flex flex-col gap-3">
+          {data.preferred_work_hours.length > 0 && (
+            <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <Clock size={14} className="text-primary-hover" />
+              Peak hours:{" "}
+              <span className="tnum text-ink">
+                {data.preferred_work_hours.map((h) => `${h}:00`).join(", ")}
+              </span>
+            </div>
+          )}
+          {data.estimation_accuracy.most_biased_category && (
+            <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <TrendingDown size={14} className="text-risk" />
+              Tends to {data.estimation_accuracy.most_biased_direction}{" "}
+              <span className="text-ink">{data.estimation_accuracy.most_biased_category}</span>
+            </div>
+          )}
+          {data.recent_completed_projects.length > 0 && (
+            <div className="flex items-start gap-2 text-[12px] text-ink-muted">
+              <Trophy size={14} className="mt-0.5 shrink-0 text-primary-hover" />
+              <span>Recently finished: {data.recent_completed_projects.join(", ")}</span>
+            </div>
+          )}
+          {data.longest_streak_days > 0 && (
+            <p className="text-[12px] text-ink-muted">
+              Longest streak: <span className="tnum text-ink">{data.longest_streak_days} days</span>
+            </p>
+          )}
+        </div>
+      )}
+    </PanelShell>
+  );
+}
+
+function SemanticMemoryPanel() {
+  const { data, error, isLoading } = useSWR("semantic-memory", () => memoryApi.semantic(8), {
+    shouldRetryOnError: false,
+  });
+
+  const RELATION_LABEL: Record<SemanticRelationType, string> = {
+    project_template: "Template",
+    recurring_workflow: "Recurring",
+  };
+  const RELATION_TONE: Record<SemanticRelationType, "signal" | "risk" | "neutral"> = {
+    project_template: "neutral",
+    recurring_workflow: "signal",
+  };
+
+  const relations = data?.relations ?? [];
+
+  return (
+    <PanelShell
+      eyebrow="Memory engine"
+      title="Memory — how your work relates"
+      isLoading={isLoading}
+      error={error}
+      empty={relations.length === 0}
+      emptyDescription="Templates and recurring workflows show up here once projects are completed."
+    >
+      <div className="flex flex-col gap-2">
+        {relations.map((relation) => (
+          <div
+            key={relation.id}
+            className="flex flex-col gap-0.5 rounded-md border border-hairline bg-surface-raised px-2.5 py-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-[12px] text-ink">
+                {relation.relation_type === "recurring_workflow" && (
+                  <Repeat size={12} className="text-primary-hover" />
+                )}
+                {relation.title}
+              </span>
+              <Badge tone={RELATION_TONE[relation.relation_type]}>
+                {RELATION_LABEL[relation.relation_type]}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-ink-faint">{relation.summary}</p>
+          </div>
+        ))}
+      </div>
+    </PanelShell>
+  );
+}
+
+/** Personal Calibration (ml/calibration.py): the per-category bias that is
+ * being applied to new estimates right now. Bars diverge from a centre
+ * line — right = you underestimate (work runs long), left = you overestimate. */
+const CALIBRATION_BAR_SCALE_PCT = 60; // matches the backend's clamp, so a full bar means "at the cap"
+
+function CalibrationPanel() {
+  const { categories, isLoading, error } = useCalibration();
+
+  return (
+    <PanelShell
+      eyebrow="Personal calibration"
+      title="How your estimates are being corrected"
+      isLoading={isLoading}
+      error={error}
+      empty={categories.length === 0}
+      emptyDescription="Once a few tasks in a category have been completed against their estimates, the correction being applied to new estimates shows up here."
+    >
+      <div className="flex flex-col gap-3">
+        {categories.map((c) => {
+          const width = Math.min(100, (Math.abs(c.bias_pct) / CALIBRATION_BAR_SCALE_PCT) * 50);
+          const under = c.bias_pct > 0;
+          return (
+            <div key={c.category} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-3 text-[12px]">
+                <span className="truncate text-ink">{c.category}</span>
+                <span className="tnum shrink-0 text-ink-muted">
+                  {under ? "+" : ""}
+                  {c.bias_pct.toFixed(0)}% · {c.sample_count} tasks
+                </span>
+              </div>
+              <div className="relative h-1.5 overflow-hidden rounded-full bg-surface-overlay">
+                <div className="absolute left-1/2 top-0 h-full w-px bg-hairline" />
+                <div
+                  className={`absolute top-0 h-full rounded-full ${under ? "bg-risk" : "bg-signal"}`}
+                  style={under ? { left: "50%", width: `${width}%` } : { right: "50%", width: `${width}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-ink-faint">
+                {Math.abs(c.bias_pct) <= 5
+                  ? "Estimates here are accurate — no meaningful correction."
+                  : under
+                    ? "Tasks here run longer than estimated, so new estimates are raised."
+                    : "Tasks here finish faster than estimated, so new estimates are lowered."}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </PanelShell>
+  );
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "critical" }) {
   return (
     <div>
@@ -283,8 +588,14 @@ export default function AnalyticsPage() {
           <WeeklyReviewPanel />
           <WorkloadHeatmap />
           <EstimationErrorPanel />
+          <CalibrationPanel />
+          <EstimationErrorTrendPanel />
           <StreaksPanel />
           <ProductivityHoursPanel />
+          <ExecutionScoreTrendPanel />
+          <EpisodicMemoryPanel />
+          <LongTermProfilePanel />
+          <SemanticMemoryPanel />
         </div>
       </main>
     </>

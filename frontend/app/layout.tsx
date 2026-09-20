@@ -3,6 +3,7 @@ import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Providers } from "./providers";
+import { THEME_INIT_SCRIPT } from "@/components/theme/ThemeProvider";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -28,6 +29,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="flex h-screen overflow-hidden bg-base font-body text-ink">
         <Providers>
           <Sidebar />

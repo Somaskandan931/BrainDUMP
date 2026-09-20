@@ -18,7 +18,9 @@ load_dotenv()  # loads ai_os/.env if present; no-op (and no error) otherwise
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent          # ai_os/
-DATA_DIR = BASE_DIR / "data"
+# BRAINDUMP_DATA_DIR lets the test suite (tests/conftest.py) point the whole
+# app at a throwaway directory instead of the real data/tasks.db.
+DATA_DIR = Path(os.getenv("BRAINDUMP_DATA_DIR", BASE_DIR / "data"))
 MODELS_DIR = BASE_DIR / "models"
 LOGS_DIR = BASE_DIR / "logs"
 
@@ -37,8 +39,8 @@ SQL_ECHO = False
 # ---------------------------------------------------------------------------
 # AI / Ollama (placeholder — filled in Milestone 4)
 # ---------------------------------------------------------------------------
-OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "qwen3:8b"
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 
 # ---------------------------------------------------------------------------
 # Calendar (Milestone 6)
@@ -46,10 +48,12 @@ OLLAMA_MODEL = "qwen3:8b"
 # OAuth client secret downloaded from Google Cloud Console (Desktop app
 # credential type). Never committed — see .env / INTEGRATIONS.md
 # for the one-time setup steps.
-GOOGLE_CREDENTIALS_PATH = BASE_DIR / "credentials.json"
+# Overridable so a hosting platform's "secret file" feature (e.g. Render)
+# can mount these somewhere other than the repo root.
+GOOGLE_CREDENTIALS_PATH = Path(os.getenv("GOOGLE_CREDENTIALS_PATH", str(BASE_DIR / "credentials.json")))
 # Written automatically on first successful OAuth flow; holds the refresh
 # token so later runs never need the browser consent screen again.
-GOOGLE_TOKEN_PATH = BASE_DIR / "token.json"
+GOOGLE_TOKEN_PATH = Path(os.getenv("GOOGLE_TOKEN_PATH", str(BASE_DIR / "token.json")))
 GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
@@ -91,6 +95,16 @@ MIN_SLOT_MINUTES = 15
 # Fallback duration used when a task has no estimated_hours yet and the
 # Estimator can't infer one either (see ml/estimator.py DEFAULT_HOURS_BY_IMPORTANCE).
 DEFAULT_TASK_HOURS = 1.0
+
+# --- Scheduler Rule 9 (PRD §20 "Group similar work together") ---------------
+# Tasks lack any explicit category/label field (see ai/long_term_memory.py's
+# note on why "frequently used labels" was dropped from that profile for the
+# same reason) -- project_id is the only real "kind of work" signal in this
+# schema, so clustering groups same-project tasks adjacently in the packing
+# order. Only applied within priority ties this close together, so
+# clustering only ever reorders noise-level ties, never lets "group similar
+# work" override a genuinely higher-priority task from a different project.
+CLUSTER_PRIORITY_TOLERANCE = 0.05
 
 # --- Deadline Engine buffers (services/deadline_service.py) -----------------
 # "When should I actually aim to be done" is a spectrum, not one date.

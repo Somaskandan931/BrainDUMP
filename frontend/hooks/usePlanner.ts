@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { analyticsApi, calendarApi, plannerApi } from "@/services/api";
+import { analyticsApi, calendarApi, plannerApi, scheduleApi } from "@/services/api";
 
 export function useNextTask() {
   const { data, error, isLoading, mutate } = useSWR(
@@ -38,6 +38,29 @@ export function useWorkload() {
   };
 }
 
+/**
+ * The dashboard hero payload (PRD §37): last morning job's cached
+ * narration + next-task pointer. Refreshes every minute like
+ * useNextTask -- it's a cheap read of a `settings` row, not a live
+ * Ollama call, so there's no cost to polling it fairly often. Returns
+ * null-safe defaults so a brand-new install (no morning run yet) just
+ * renders nothing in the hero rather than erroring.
+ */
+export function useDailySummary() {
+  const { data, error, isLoading, mutate } = useSWR(
+    "daily-summary",
+    () => plannerApi.dailySummary(),
+    { refreshInterval: 60_000 }
+  );
+
+  return {
+    summary: data ?? null,
+    isLoading,
+    error,
+    refresh: mutate,
+  };
+}
+
 export function useCalendarEvents(source?: string) {
   const { data, error, isLoading, mutate } = useSWR(
     ["calendar-events", source ?? null],
@@ -46,4 +69,30 @@ export function useCalendarEvents(source?: string) {
   );
 
   return { events: data ?? [], isLoading, error, refresh: mutate };
+}
+
+/**
+ * The Today dashboard's "Start your day" lock (services/schedule_service.py).
+ * Refreshes every 30s mostly so a plan started in another tab/device shows
+ * up here without a manual reload — the write itself (startDay) always
+ * mutates optimistically-ish by re-fetching right after the POST resolves.
+ */
+export function useDailyPlan() {
+  const { data, error, isLoading, mutate } = useSWR(
+    "daily-plan",
+    () => scheduleApi.today(),
+    { refreshInterval: 30_000 }
+  );
+
+  return {
+    plan: data ?? null,
+    isLoading,
+    error,
+    refresh: mutate,
+    startDay: async (bufferMultiplier: number) => {
+      const plan = await scheduleApi.startDay(bufferMultiplier);
+      await mutate(plan);
+      return plan;
+    },
+  };
 }

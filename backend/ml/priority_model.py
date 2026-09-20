@@ -126,6 +126,39 @@ def _energy_fit(task: Task, at_hour: int, energy_pattern: dict[int, str]) -> flo
     return {0: 1.0, 1: 0.5, 2: 0.15}[distance]
 
 
+def compute_priority_components(
+    task: Task,
+    *,
+    now: Optional[datetime] = None,
+    previous_task: Optional[Task] = None,
+    at_hour: Optional[int] = None,
+    energy_pattern: Optional[dict[int, str]] = None,
+    context_switch_cost: Optional[float] = None,
+) -> dict[str, float]:
+    """
+    The five raw component scores (each 0-1, before weighting) that
+    compute_priority_score() combines into the final priority_score.
+    Split out so services/explanation_service.py can show *why* a task
+    ranked where it did ("deadline pressure 0.91, energy fit 0.84, ...")
+    instead of only the single collapsed number — the review's "Why this
+    task?" feature needs the components, not just the total.
+    """
+    now = now or datetime.now(timezone.utc)
+    at_hour = at_hour if at_hour is not None else now.hour
+    energy_pattern = energy_pattern or config.DEFAULT_ENERGY_PATTERN
+
+    if context_switch_cost is None:
+        context_switch_cost = compute_context_switch_cost(task, previous_task)
+
+    return {
+        "deadline_risk": _deadline_risk(task, now),
+        "importance": _importance_score(task),
+        "estimated_hours": _estimated_hours_score(task),
+        "context_switch_cost": context_switch_cost,
+        "energy_fit": _energy_fit(task, at_hour, energy_pattern),
+    }
+
+
 def compute_priority_score(
     task: Task,
     *,
@@ -141,20 +174,22 @@ def compute_priority_score(
     (e.g. while walking a sorted schedule), is used as-is instead of being
     recomputed from `previous_task`.
     """
-    now = now or datetime.now(timezone.utc)
-    at_hour = at_hour if at_hour is not None else now.hour
-    energy_pattern = energy_pattern or config.DEFAULT_ENERGY_PATTERN
-
-    if context_switch_cost is None:
-        context_switch_cost = compute_context_switch_cost(task, previous_task)
-
+    components = compute_priority_components(
+        task,
+        now=now,
+        previous_task=previous_task,
+        at_hour=at_hour,
+        energy_pattern=energy_pattern,
+        context_switch_cost=context_switch_cost,
+    )
     weights = config.PRIORITY_WEIGHTS
-    score = (
-        weights["deadline_risk"] * _deadline_risk(task, now)
-        + weights["importance"] * _importance_score(task)
-        + weights["estimated_hours"] * _estimated_hours_score(task)
-        + weights["context_switch_cost"] * context_switch_cost
-        + weights["energy_fit"] * _energy_fit(task, at_hour, energy_pattern)
+    # context_switch_cost is a *penalty* (0 = same project, 1 = full switch),
+    # so it has to count against the score. Summing the raw cost made a
+    # project switch raise a task's priority instead of lowering it; the other
+    # four components are already "higher = do sooner".
+    score = sum(
+        weights[name] * ((1.0 - value) if name == "context_switch_cost" else value)
+        for name, value in components.items()
     )
     return round(max(0.0, min(1.0, score)), 4)
 

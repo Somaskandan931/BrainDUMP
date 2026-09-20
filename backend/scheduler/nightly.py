@@ -34,20 +34,26 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 
 from backend.database import SessionLocal
+from backend.ai import long_term_memory
 from backend.integrations.google_calendar import GoogleCalendarError
 from backend.models.calendar_event import CalendarEvent
 from backend.models.metrics import ProductivityMetric
 from backend.models.enums import EventSource, TaskStatus
 from backend.models.task import Task
 from backend.models.settings import Setting
-from backend.services import calendar_sync_service, deadline_service, notification_service
+from backend.services import (
+    calendar_sync_service,
+    deadline_service,
+    execution_score_service,
+    notification_service,
+)
 
 logger = logging.getLogger(__name__)
 
 _SETTINGS_KEY = "last_nightly_summary"
 
 
-def _today_metrics(db, today: date) -> ProductivityMetric:
+def _today_metrics(db, today: date, now: datetime) -> ProductivityMetric:
     day_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
     day_end = day_start + timedelta(days=1)
 
@@ -94,6 +100,15 @@ def _today_metrics(db, today: date) -> ProductivityMetric:
     metric.tasks_planned = tasks_planned
     metric.completion_rate = round(len(completed_today) / tasks_planned, 3) if tasks_planned > 0 else None
     metric.estimation_error_pct = estimation_error_pct
+
+    # Snapshot today's Execution Score (PRD §15/§37) so the trend view has
+    # a real history point for today, computed with the same `now` used
+    # for the rest of tonight's run rather than a fresh timestamp.
+    try:
+        metric.execution_score = execution_score_service.compute_execution_score(db, now=now).score
+    except Exception as exc:  # noqa: BLE001 - a scoring bug shouldn't block the rest of the nightly job
+        logger.warning("Nightly job: execution score snapshot failed (%s)", exc)
+
     return metric
 
 
@@ -104,7 +119,7 @@ def run_nightly_job() -> dict:
         now = datetime.now(timezone.utc)
         today = now.date()
 
-        metric = _today_metrics(db, today)
+        metric = _today_metrics(db, today, now)
         replan_result = deadline_service.replan(db)
 
         try:
@@ -113,6 +128,15 @@ def run_nightly_job() -> dict:
         except GoogleCalendarError as exc:
             logger.info("Nightly job: Google Calendar push skipped (%s)", exc)
             calendar_sync_result = {"pushed": 0, "errors": [str(exc)]}
+
+        # Long-Term Memory (PRD §63) refresh -- recomputes preferred hours,
+        # estimation bias, and recent project history from tonight's fully
+        # up-to-date data. Wrapped like the ML retrain below: a bug here
+        # shouldn't take down replan/calendar sync, which matter more.
+        try:
+            long_term_memory.refresh_profile(db)
+        except Exception as exc:  # noqa: BLE001 - see comment above
+            logger.warning("Nightly job: long-term memory refresh failed (%s)", exc)
 
         # Weekly (Sunday) retrain of ml/estimator.py's regressor. Wrapped
         # broadly -- sklearn/joblib issues (missing optional dep, a

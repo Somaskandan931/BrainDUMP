@@ -48,6 +48,16 @@ export function useTasks(params?: { projectId?: number; statusFilter?: string })
         return null;
       }
     },
+    skip: async (id: number) => {
+      try {
+        const skipped = await tasksApi.skip(id);
+        await mutate();
+        return skipped;
+      } catch (err) {
+        toast.error(friendlyApiError(err, "Couldn't skip that task."));
+        return null;
+      }
+    },
     remove: async (id: number) => {
       try {
         await tasksApi.remove(id);

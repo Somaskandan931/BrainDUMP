@@ -13,13 +13,15 @@ export function RadialGauge({
   label,
   sublabel,
   tone = "primary",
+  suffix = "%",
 }: {
   value: number; // 0-100
   size?: number;
   stroke?: number;
   label?: string;
   sublabel?: string;
-  tone?: "primary" | "signal" | "risk";
+  tone?: "primary" | "signal" | "risk" | "critical";
+  suffix?: string;
 }) {
   const clamped = Math.max(0, Math.min(100, value));
   const radius = (size - stroke) / 2;
@@ -29,6 +31,7 @@ export function RadialGauge({
     primary: "#7C8BFF",
     signal: "#45D9A6",
     risk: "#F5A623",
+    critical: "#F0554A",
   };
 
   return (
@@ -57,7 +60,8 @@ export function RadialGauge({
       </svg>
       <div className="absolute flex flex-col items-center">
         <span className="tnum font-display text-2xl font-semibold text-ink">
-          {Math.round(clamped)}%
+          {Math.round(clamped)}
+          {suffix}
         </span>
         <span className="mt-0.5 text-center text-[10px] leading-tight text-ink-faint">
           {sublabel ?? label}

@@ -26,13 +26,24 @@ FastAPI app in `backend/app.py`. Interactive docs at `/docs` once running.
 | POST | `/api/planner/goal` | Live | Goal -> Project + task roadmap |
 | GET | `/api/planner/next-task` | Live | `{"task": null}` if nothing active |
 | POST | `/api/planner/replan` | Live | Dynamic rescheduling |
+| GET | `/api/planner/next-task/explain` | Live | "Why this task?" — priority components + reasons; `{"explanation": null}` if nothing active |
+| GET | `/api/planner/replan/explain` | Live | "Why did my schedule change?" — from the latest replan episode; `{"explanation": null}` before any replan |
+| GET | `/api/tasks/{id}/explain-estimate` | Live | "Why this estimate?" — base tier, calibration bias/applied %, calibrated hours |
+| GET | `/api/tasks/{id}/explain-deadline-risk` | Live | "Why is this deadline at risk?" — 400 if the task has no deadline |
+| POST | `/api/demo/seed` | Live | Load the labeled `[Demo]` workspace; no-op (`already_seeded: true`) if one exists |
+| POST | `/api/demo/reset` | Live | Remove every `[Demo]` project and the synthetic metric rows the seed created |
 | GET | `/api/analytics/weekly-review` | Live | Stats computed live, AI recommendation with rule-based fallback |
 | GET | `/api/analytics/estimation-error` | Live | Grouped by project/importance category |
+| GET | `/api/analytics/estimation-error/trend` | Live | One point per day, nightly-job snapshots + live today |
+| GET | `/api/analytics/calibration` | Live | Per-category estimate bias `ml/calibration.py` is applying right now (same gate as the estimator) |
 | GET | `/api/analytics/streaks` | Live | Completion streaks |
 | GET | `/api/analytics/productivity-hours` | Live | Buckets `WorkSession` by hour of day |
 | GET | `/api/calendar/events` | Live | Local cache, optional `?source=` |
 | POST | `/api/calendar/sync` | Live | 424 if `credentials.json` missing |
 | POST | `/api/calendar/create-session` | Live | Ad hoc "start now" session |
+| GET | `/api/memory/episodic` | Live | Episodic Memory (PRD §63): recent events, optional `?event_type=` `?limit=` |
+| GET | `/api/memory/long-term` | Live | Long-Term Memory (PRD §63): derived profile (peak hours, estimation bias, recent completed projects) |
+| GET | `/api/memory/semantic` | Live | Semantic Memory (PRD §63): project templates + recurring-workflow relations, optional `?relation_type=` `?limit=` |
 
 ## Design decisions
 

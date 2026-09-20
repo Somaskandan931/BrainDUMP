@@ -48,3 +48,22 @@ class ReplanResponse(BaseModel):
     rescheduled_tasks: List[TaskRead]
     demoted_tasks: List[TaskRead]
     at_risk_tasks: List[TaskRead]
+
+
+class DailySummaryResponse(BaseModel):
+    """
+    The dashboard's "what should I work on right now" hero payload (PRD
+    §37) -- a read of the last scheduler/morning.py run's cached output,
+    not a live recomputation (see that module's docstring for why).
+    `generated_at`/`narration` are null when the morning job hasn't run
+    yet at all (brand-new install), same null-safety pattern as
+    NextTaskResponse.task above.
+    """
+
+    generated_at: Optional[str] = None
+    scheduled_count: int = 0
+    next_task_id: Optional[int] = None
+    next_task_title: Optional[str] = None
+    narration: Optional[str] = None
+    narration_ai_generated: bool = False
+    notifications: List[dict] = Field(default_factory=list)

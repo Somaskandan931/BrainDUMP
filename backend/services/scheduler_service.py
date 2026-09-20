@@ -21,16 +21,34 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend import config
+from backend.ai import episodic_memory, long_term_memory
 from backend.ml import estimator
 from backend.ml.priority_model import compute_priority_score, compute_context_switch_cost, energy_fit_at_hour
 from backend.models.calendar_event import CalendarEvent
 from backend.models.dependency import Dependency
-from backend.models.enums import EventSource, SyncStatus, TaskStatus
+from backend.models.enums import EpisodicEventType, EventSource, SyncStatus, TaskStatus
 from backend.models.session import WorkSession
 from backend.models.task import Task
+from backend.services import user_settings_service
+
+# Episodic Memory (PRD §63 "Milestones"): a project crossing one of these
+# fractions of its tasks completed is a milestone in its own right,
+# distinct from api/projects.py's PROJECT_COMPLETED (which only fires on
+# the explicit active->completed *status* transition, not on task count).
+# 100% is included even though it usually coincides with that status
+# transition, because task completion and project.status are tracked
+# independently in this schema -- a project can have every task done
+# without anyone flipping its status, and that's still worth recording.
+_MILESTONE_THRESHOLDS_PCT = (25, 50, 75, 100)
+# Below this many total tasks, 25/50/75% jumps are single-task noise
+# (a 2-task project "crosses" 50% and 100% on the same completion) --
+# not a real milestone, just how division works. Mirrors the noise-
+# threshold pattern analytics_service.py already uses elsewhere.
+_MILESTONE_MIN_PROJECT_TASKS = 4
 
 
 @dataclass
@@ -75,6 +93,13 @@ def generate_free_slots(
     Free working-hour slots from `start` through `horizon_days` ahead,
     with existing CalendarEvents carved out. Slots never start in the
     past relative to `start`.
+
+    Working hours come from Settings (weekday vs. weekend, see
+    user_settings_service.get_working_hours()) with the pre-Settings
+    config.WORK_DAY_START_HOUR/END_HOUR as the fallback default until
+    someone actually saves the Settings page. Lunch stays a fixed system
+    rule (PRD Rule 3, "Protect lunch") regardless of Settings; user-defined
+    Time Blocks (breakfast, class, gym, ...) are carved out on top of it.
     """
     end = start + timedelta(days=horizon_days)
     busy = get_busy_intervals(db, start, end)
@@ -84,11 +109,13 @@ def generate_free_slots(
     last_day = end.date()
 
     while current_day <= last_day:
+        start_hour, end_hour = user_settings_service.get_working_hours(db, current_day)
+
         day_start = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc).replace(
-            hour=config.WORK_DAY_START_HOUR
+            hour=start_hour
         )
         day_end = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc).replace(
-            hour=config.WORK_DAY_END_HOUR
+            hour=end_hour
         )
         day_start = max(day_start, start)
 
@@ -99,6 +126,12 @@ def generate_free_slots(
             hour=config.LUNCH_END_HOUR
         )
         day_busy = busy + [(lunch_start, lunch_end)]
+
+        midnight = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc)
+        for block_start_min, block_end_min in user_settings_service.get_blocked_ranges_for_day(db, current_day):
+            day_busy.append(
+                (midnight + timedelta(minutes=block_start_min), midnight + timedelta(minutes=block_end_min))
+            )
 
         if day_start < day_end:
             slots.extend(_carve_busy(day_start, day_end, day_busy))
@@ -132,13 +165,17 @@ def _carve_busy(
 
 
 def pack_tasks_into_schedule(
-    db: Session, tasks: List[Task], slots: List[Slot]
+    db: Session, tasks: List[Task], slots: List[Slot], energy_pattern: Optional[dict] = None
 ) -> List[Tuple[Task, CalendarEvent, WorkSession]]:
     """
     Greedily assign each task (already priority-ordered) to the earliest
     free slot with enough room, consuming that much time from the slot
     (splitting it if there's leftover). Tasks that don't fit anywhere in
     `slots` are skipped, not force-scheduled. Does not commit.
+
+    `energy_pattern`, if given, overrides config.DEFAULT_ENERGY_PATTERN
+    for the slot-choice fit scoring below (see long_term_memory.
+    derived_energy_pattern) -- passed through as-is to energy_fit_at_hour.
     """
     remaining_slots = [Slot(s.start, s.end) for s in slots]
     # Cumulative packed minutes since the last break/natural gap, tracked
@@ -166,7 +203,7 @@ def pack_tasks_into_schedule(
         # days out ahead of a good-enough one tomorrow morning.
         def _sort_key(i: int) -> tuple:
             slot = remaining_slots[i]
-            fit_bucket = round(energy_fit_at_hour(task, slot.start.hour), 1)
+            fit_bucket = round(energy_fit_at_hour(task, slot.start.hour, energy_pattern), 1)
             return (-fit_bucket, slot.start)
 
         chosen_index = min(candidate_indices, key=_sort_key)
@@ -245,16 +282,22 @@ def _tasks_with_unmet_dependencies(db: Session, tasks: List[Task]) -> set:
     return blocked
 
 
-def _score_and_order_tasks(db: Session, tasks: List[Task], now: datetime) -> List[Task]:
+def _score_and_order_tasks(
+    db: Session, tasks: List[Task], now: datetime, energy_pattern: Optional[dict] = None
+) -> List[Task]:
     """
     Score every task (ignoring context switching on the first pass, since
     order isn't known yet), sort descending, then walk the sorted list
     once more filling in each task's real context_switch_cost against
     whichever task now precedes it — and folding that into the final
     stored priority_score.
+
+    `energy_pattern`, if given, overrides config.DEFAULT_ENERGY_PATTERN
+    for every compute_priority_score call below (see long_term_memory.
+    derived_energy_pattern).
     """
     for task in tasks:
-        task.priority_score = compute_priority_score(task, now=now)
+        task.priority_score = compute_priority_score(task, now=now, energy_pattern=energy_pattern)
     tasks.sort(key=lambda t: (t.priority_score or 0.0), reverse=True)
 
     previous: Optional[Task] = None
@@ -262,12 +305,74 @@ def _score_and_order_tasks(db: Session, tasks: List[Task], now: datetime) -> Lis
         switch_cost = compute_context_switch_cost(task, previous)
         task.context_switch_cost = switch_cost
         task.priority_score = compute_priority_score(
-            task, now=now, context_switch_cost=switch_cost
+            task, now=now, context_switch_cost=switch_cost, energy_pattern=energy_pattern
         )
         previous = task
 
     tasks.sort(key=lambda t: (t.priority_score or 0.0), reverse=True)
     return tasks
+
+
+def _resolve_energy_pattern(db: Session) -> Optional[dict]:
+    """
+    Shared by schedule_pending_tasks() and get_next_task(): the learned
+    energy pattern from long_term_memory, if there's enough logged
+    history behind it to trust (see derived_energy_pattern's own
+    sample-size guard) -- otherwise None, so callers fall straight
+    through to config.DEFAULT_ENERGY_PATTERN exactly as before this was
+    wired up.
+    """
+    profile = long_term_memory.get_profile(db)
+    if profile is None:
+        return None
+    return long_term_memory.derived_energy_pattern(profile)
+
+
+def _cluster_similar_tasks(tasks: List[Task]) -> List[Task]:
+    """
+    Scheduler Rule 9 (PRD §20 "Group similar work together" -- see the
+    worked example: "Coding, Email, Coding, Reading, Coding" becomes
+    "Coding, Coding, Coding, Email, Reading"). Distinct from Rule 10 /
+    context_switch_cost, which only makes switching *cheaper to score*;
+    this actively reorders near-tied tasks so same-project work actually
+    lands adjacent in the final packing order.
+
+    `tasks` must already be sorted descending by priority_score (as
+    returned by _score_and_order_tasks). Walks it once, in
+    config.CLUSTER_PRIORITY_TOLERANCE-wide priority bands -- within a
+    band, tasks are stable-grouped by project_id (first-seen project
+    first, ties otherwise keeping their relative order) instead of left
+    in whatever order they happened to score in. Never moves a task
+    across a band boundary, so a genuinely higher-priority task from a
+    different project is never pushed back to accommodate clustering.
+    """
+    if not tasks:
+        return tasks
+
+    result: List[Task] = []
+    n = len(tasks)
+    i = 0
+    while i < n:
+        anchor_score = tasks[i].priority_score or 0.0
+        j = i
+        while j < n and abs((tasks[j].priority_score or 0.0) - anchor_score) <= config.CLUSTER_PRIORITY_TOLERANCE:
+            j += 1
+        band = tasks[i:j]
+
+        project_order: List[Optional[int]] = []
+        buckets: dict = {}
+        for t in band:
+            key = t.project_id
+            if key not in buckets:
+                buckets[key] = []
+                project_order.append(key)
+            buckets[key].append(t)
+        for key in project_order:
+            result.extend(buckets[key])
+
+        i = j
+
+    return result
 
 
 def schedule_pending_tasks(
@@ -305,9 +410,11 @@ def schedule_pending_tasks(
     for task in candidates:
         estimator.ensure_estimate(db, task, log=True)
 
-    ordered = _score_and_order_tasks(db, candidates, now)
+    energy_pattern = _resolve_energy_pattern(db)
+    ordered = _score_and_order_tasks(db, candidates, now, energy_pattern=energy_pattern)
+    ordered = _cluster_similar_tasks(ordered)
     slots = generate_free_slots(db, now, horizon_days)
-    scheduled = pack_tasks_into_schedule(db, ordered, slots)
+    scheduled = pack_tasks_into_schedule(db, ordered, slots, energy_pattern=energy_pattern)
 
     db.commit()
     result = [task for task, _event, _session in scheduled]
@@ -344,7 +451,77 @@ def complete_task(db: Session, task: Task) -> Task:
 
     db.commit()
     db.refresh(task)
+
+    _record_milestone_episode(db, task)
+
     return task
+
+
+def skip_task(db: Session, task: Task) -> Task:
+    """
+    "Not this one right now" — push `task` to the back of today's order
+    without marking it done or touching its calendar schedule. Reuses
+    the same sort_order field the Today list's drag-to-reorder already
+    persists (see api/tasks.py::reorder_tasks) — skip just sets it past
+    every other active task's current sort_order so it sinks to the
+    bottom of that ordering on the next read, instead of introducing a
+    parallel "skipped" concept elsewhere in the schema.
+    """
+    max_sort_order = (
+        db.query(func.max(Task.sort_order))
+        .filter(Task.status.in_(_active_statuses()), Task.id != task.id)
+        .scalar()
+    )
+    task.sort_order = (max_sort_order or 0) + 1
+
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def _record_milestone_episode(db: Session, task: Task) -> None:
+    """
+    Episodic Memory (PRD §63 "Milestones"): fires when completing `task`
+    pushes its project's completed-task ratio across one of
+    _MILESTONE_THRESHOLDS_PCT. Only meaningful for tasks that belong to a
+    project with enough tasks to make a percentage threshold real (see
+    _MILESTONE_MIN_PROJECT_TASKS) -- a standalone task (no project) has no
+    "progress" to be a milestone of.
+
+    record_event()'s (event_type, occurred_on, title) dedup means at most
+    one row per project+threshold ever gets written, updated in place if
+    the same threshold is somehow crossed again (e.g. a task un-completed
+    then re-completed) rather than duplicated.
+    """
+    project = task.project
+    if project is None:
+        return
+
+    total = len(project.tasks)
+    if total < _MILESTONE_MIN_PROJECT_TASKS:
+        return
+
+    completed = sum(1 for t in project.tasks if t.status == TaskStatus.COMPLETED)
+    pct_after = (completed / total) * 100
+    pct_before = ((completed - 1) / total) * 100  # this task's own completion, backed out
+
+    crossed = [p for p in _MILESTONE_THRESHOLDS_PCT if pct_before < p <= pct_after]
+    if not crossed:
+        return
+
+    threshold = max(crossed)  # if one completion jumps two thresholds, record the furthest one reached
+    occurred_on = datetime.now(timezone.utc).date()
+    episodic_memory.record_event(
+        db,
+        EpisodicEventType.MILESTONE,
+        title=f"{project.name}: {threshold}% complete",
+        summary=(
+            f'"{project.name}" reached {threshold}% complete '
+            f"({completed}/{total} tasks) after finishing \"{task.title}\"."
+        ),
+        occurred_on=occurred_on,
+        payload={"project_id": project.id, "threshold_pct": threshold, "tasks_total": total, "tasks_completed": completed},
+    )
 
 
 def get_next_task(db: Session) -> Optional[Task]:
@@ -368,12 +545,13 @@ def get_next_task(db: Session) -> Optional[Task]:
         .first()
     )
 
+    energy_pattern = _resolve_energy_pattern(db)
     for task in candidates:
         estimator.ensure_estimate(db, task, log=False)
         switch_cost = compute_context_switch_cost(task, last_completed)
         task.context_switch_cost = switch_cost
         task.priority_score = compute_priority_score(
-            task, now=now, context_switch_cost=switch_cost
+            task, now=now, context_switch_cost=switch_cost, energy_pattern=energy_pattern
         )
 
     db.commit()

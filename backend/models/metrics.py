@@ -33,6 +33,17 @@ class ProductivityMetric(Base, TimestampMixin):
     most_productive_hour: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0-23
     estimation_error_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    # Execution Score (PRD §15/§37, Algorithm 8) snapshotted once per day by
+    # the nightly job -- see execution_score_service.compute_execution_score().
+    # Nullable/added after the table already existed in earlier sessions:
+    # SQLAlchemy's create_all() only creates missing tables, not missing
+    # columns on existing ones, so a pre-existing local tasks.db needs its
+    # column added by hand (`ALTER TABLE productivity_metrics ADD COLUMN
+    # execution_score INTEGER`) or the db file deleted in dev. Nullable
+    # means old rows without a score just don't show up in the trend
+    # instead of breaking anything.
+    execution_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     def __repr__(self) -> str:

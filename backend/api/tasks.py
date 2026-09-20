@@ -29,8 +29,11 @@ from backend.schemas.task import (
     SubtaskRead,
 )
 from backend.schemas.deadline import TaskDeadlinePlan
-from backend.services import deadline_service
-from backend.services.scheduler_service import complete_task as complete_task_service
+from backend.services import deadline_service, explanation_service
+from backend.services.scheduler_service import (
+    complete_task as complete_task_service,
+    skip_task as skip_task_service,
+)
 
 router = APIRouter()
 
@@ -135,6 +138,15 @@ def complete_task(task_id: int, db: Session = Depends(get_db)) -> Task:
     return complete_task_service(db, task)
 
 
+@router.post("/{task_id}/skip", response_model=TaskRead)
+def skip_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+    """Push a task to the back of today's order without marking it done."""
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return skip_task_service(db, task)
+
+
 @router.get("/{task_id}/deadline-plan", response_model=TaskDeadlinePlan)
 def get_deadline_plan(task_id: int, db: Session = Depends(get_db)) -> dict:
     """
@@ -152,6 +164,31 @@ def get_deadline_plan(task_id: int, db: Session = Depends(get_db)) -> dict:
     deadline_service.persist_deadline_plan(db, task, plan)
     db.commit()
     return plan
+
+
+@router.get("/{task_id}/explain-estimate")
+def explain_estimate(task_id: int, db: Session = Depends(get_db)) -> dict:
+    """
+    'Why this estimate?' — which tier of the estimator ladder produced
+    the base number, and what personal calibration (if any) was applied
+    on top of it. See services/explanation_service.py.
+    """
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return explanation_service.explain_estimate(db, task)
+
+
+@router.get("/{task_id}/explain-deadline-risk")
+def explain_deadline_risk(task_id: int, db: Session = Depends(get_db)) -> dict:
+    """'Why is this deadline at risk?' — the plain-language reasons
+    behind this task's current risk_score. 400 if it has no deadline."""
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.deadline is None:
+        raise HTTPException(status_code=400, detail="Task has no deadline to explain risk for")
+    return explanation_service.explain_deadline_risk(db, task)
 
 
 # --- Subtask CRUD (nested under a task) ---------------------------------

@@ -12,9 +12,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.models.enums import EventSource, SyncStatus
+from backend.schemas._mixins import utc_iso
 
 
 class CalendarEventRead(BaseModel):
@@ -31,6 +32,12 @@ class CalendarEventRead(BaseModel):
     synced: bool
     created_at: datetime
     updated_at: datetime
+
+    # SQLite hands these back naive (see utils/timeutil.py) — re-attach UTC
+    # on the way out so the frontend never misreads them as local time.
+    @field_serializer("start_time", "end_time", "created_at", "updated_at")
+    def _serialize_utc(self, dt: datetime) -> str:
+        return utc_iso(dt)
 
 
 class CalendarSyncResponse(BaseModel):

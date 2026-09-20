@@ -10,7 +10,7 @@ Every page calls a real backend route from `backend/api/API.md` through
 
 | Page | Backed by | Status |
 |---|---|---|
-| Dashboard | `/api/planner/next-task`, `/api/tasks/`, derived client-side ratios | Live |
+| Dashboard | `/api/planner/next-task`, `/api/planner/today`, `/api/tasks/`, derived client-side ratios | Live |
 | Brain Dump | `/api/planner/brain-dump`, `/api/planner/goal` | Live |
 | Projects | `/api/projects/*`, `/api/tasks/*` | Live |
 | Calendar | `/api/calendar/*` | Live |
@@ -48,6 +48,16 @@ Every page calls a real backend route from `backend/api/API.md` through
   `ApiError` with `status === 501` and render an explicit "not built
   yet" state — a defensive path that's no longer exercised now that the
   backend returns real data, but costs nothing to leave in place.
+- **Dashboard hero subtitle prefers the morning job's narration over the
+  client-computed project count.** `useDailySummary()` (`hooks/usePlanner.ts`)
+  reads `GET /api/planner/today`; `app/page.tsx` shows `summary.narration`
+  when present ("You're on track: 3 tasks scheduled...") and only falls
+  back to the old "`N` active projects" line on a brand-new install that
+  hasn't had a morning run yet (`narration` is null in that case, same
+  null-safety contract as `useNextTask()`'s `task: null`). Polls every
+  60s like `useNextTask()` — it's a cheap `settings`-table read on the
+  backend, not a live Ollama call per `scheduler/morning.py`'s docstring,
+  so there's no cost to polling it that often.
 - **App Router, not a `pages/` folder.** `app/` is Next.js's current
   default; `styles/` was similarly folded into `app/globals.css` +
   Tailwind rather than kept as a separate tree.

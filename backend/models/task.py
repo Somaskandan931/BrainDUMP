@@ -84,6 +84,17 @@ class Task(Base, TimestampMixin):
     # drags something; untouched tasks fall back to created_at ordering.
     sort_order: Mapped[Optional[int]] = mapped_column(nullable=True)
 
+    # Times "Skip" has been pressed on the Today schedule (services/
+    # scheduler_service.skip_task). Purely informational/analytics right
+    # now — skipping pushes the task to the back of today's order (same
+    # sort_order mechanism as a drag) rather than changing status, since
+    # a skipped task is still owed, just not next. Nullable at the DB
+    # level on purpose: database._sync_missing_columns() ADD COLUMNs
+    # without a DEFAULT clause, so an existing row backfilled by that
+    # path would violate NOT NULL. Application code always coalesces
+    # None to 0 (see services/scheduler_service.skip_task).
+    skip_count: Mapped[Optional[int]] = mapped_column(nullable=True)
+
     # --- Relationships ------------------------------------------------------
     project: Mapped[Optional["Project"]] = relationship(back_populates="tasks")
     subtasks: Mapped[List["Subtask"]] = relationship(

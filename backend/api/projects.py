@@ -10,14 +10,16 @@ ARCHITECTURE.md for the note on this addition.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.ai import episodic_memory, semantic_memory
 from backend.database import get_db
 from backend.models.project import Project
-from backend.models.enums import ProjectStatus
+from backend.models.enums import EpisodicEventType, ProjectStatus, TaskStatus
 from backend.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead
 
 router = APIRouter()
@@ -57,11 +59,39 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    was_completed = project.status == ProjectStatus.COMPLETED
+
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(project, field, value)
 
     db.commit()
     db.refresh(project)
+
+    # Episodic Memory (PRD §63): only on the actual active->completed
+    # transition, not on every unrelated field edit to an already-
+    # completed project (record_event's dedup on (type, date, title)
+    # would just update the same row anyway, but the transition check
+    # keeps this from running its query on every PUT).
+    if project.status == ProjectStatus.COMPLETED and not was_completed:
+        total = len(project.tasks)
+        completed = sum(1 for t in project.tasks if t.status == TaskStatus.COMPLETED)
+        episodic_memory.record_event(
+            db,
+            EpisodicEventType.PROJECT_COMPLETED,
+            title=f"Completed project: {project.name}",
+            summary=f'Finished "{project.name}" — {completed}/{total} task(s) completed.',
+            occurred_on=datetime.now(timezone.utc).date(),
+            payload={"project_id": project.id, "tasks_total": total, "tasks_completed": completed},
+        )
+
+        # Semantic Memory (PRD §63): capture this project's task
+        # breakdown as a reusable template, then check whether it
+        # resembles an earlier completed project closely enough to be
+        # a recurring workflow. Same transition guard as episodic
+        # memory above, for the same reason.
+        semantic_memory.capture_project_template(db, project)
+        semantic_memory.detect_recurring_workflow(db, project)
+
     return project
 
 

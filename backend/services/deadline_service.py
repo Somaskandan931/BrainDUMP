@@ -25,8 +25,9 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from backend import config
+from backend.ai import episodic_memory
 from backend.models.calendar_event import CalendarEvent
-from backend.models.enums import Importance, TaskStatus
+from backend.models.enums import EpisodicEventType, Importance, TaskStatus
 from backend.models.session import WorkSession
 from backend.models.task import Task
 from backend.services import scheduler_service
@@ -293,9 +294,49 @@ def replan(db: Session) -> dict:
         persist_deadline_plan(db, task)
     db.commit()
 
+    _record_replan_episode(db, now=now, demoted=demoted, rescheduled=rescheduled, at_risk_after=at_risk_after)
+
     return {
         "rescheduled_count": len(rescheduled),
         "rescheduled_tasks": rescheduled,
         "demoted_tasks": demoted,
         "at_risk_tasks": at_risk_after,
     }
+
+
+def _record_replan_episode(
+    db: Session, *, now: datetime, demoted: List[Task], rescheduled: List[Task], at_risk_after: List[Task]
+) -> None:
+    """
+    Episodic Memory (PRD §63 "Planning decisions"): replan() runs both
+    from the nightly job (every night) and from an explicit user request,
+    so this only records something when the pass actually changed the
+    plan -- a quiet night with nothing to compress isn't a planning
+    decision worth remembering. occurred_on is today's date, so at most
+    one row per day gets written/updated even if replan() is triggered
+    more than once (e.g. nightly job + a manual replan the same day) --
+    record_event()'s dedup on (type, date, title) collapses those into
+    one, with the later call's summary winning.
+    """
+    if not demoted and not rescheduled:
+        return
+    parts = []
+    if rescheduled:
+        parts.append(f"repacked {len(rescheduled)} task(s)")
+    if demoted:
+        parts.append(f"pushed out {len(demoted)} lower-priority task(s)")
+    if at_risk_after:
+        parts.append(f"{len(at_risk_after)} still at risk")
+    summary = "Replan: " + ", ".join(parts) + "."
+    episodic_memory.record_event(
+        db,
+        EpisodicEventType.PLANNING_DECISION,
+        title=f"Replan: {now.date().isoformat()}",
+        summary=summary,
+        occurred_on=now.date(),
+        payload={
+            "rescheduled_task_ids": [t.id for t in rescheduled],
+            "demoted_task_ids": [t.id for t in demoted],
+            "at_risk_task_ids": [t.id for t in at_risk_after],
+        },
+    )

@@ -28,10 +28,21 @@ from backend.schemas.analytics import (
     WeeklyReviewResponse,
     CategoryEstimationError,
     EstimationErrorResponse,
+    EstimationErrorTrendPoint,
+    EstimationErrorTrendResponse,
     StreaksResponse,
     HourBucket,
     ProductivityHoursResponse,
 )
+from backend.schemas.memory import (
+    EpisodicEventRead,
+    EpisodicMemoryResponse,
+    EstimationAccuracySummary,
+    LongTermProfileResponse,
+    SemanticRelationRead,
+    SemanticMemoryResponse,
+)
+from backend.schemas.schedule import DailyPlanRead, StartDayRequest, BUFFER_MULTIPLIERS
 
 __all__ = [
     "ProjectCreate",
@@ -51,7 +62,18 @@ __all__ = [
     "WeeklyReviewResponse",
     "CategoryEstimationError",
     "EstimationErrorResponse",
+    "EstimationErrorTrendPoint",
+    "EstimationErrorTrendResponse",
     "StreaksResponse",
     "HourBucket",
     "ProductivityHoursResponse",
+    "EpisodicEventRead",
+    "EpisodicMemoryResponse",
+    "EstimationAccuracySummary",
+    "LongTermProfileResponse",
+    "SemanticRelationRead",
+    "SemanticMemoryResponse",
+    "DailyPlanRead",
+    "StartDayRequest",
+    "BUFFER_MULTIPLIERS",
 ]

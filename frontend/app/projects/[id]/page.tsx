@@ -11,9 +11,11 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TaskRow } from "@/components/tasks/TaskRow";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useProject, useProjects } from "@/hooks/useProjects";
 import { useTasks } from "@/hooks/useTasks";
 import { Importance } from "@/services/types";
+import { friendlyApiError } from "@/lib/format";
 
 const IMPORTANCE_OPTIONS: Importance[] = ["low", "medium", "high", "critical"];
 
@@ -22,7 +24,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const router = useRouter();
   const { project, isLoading: projectLoading } = useProject(id);
   const { remove: removeProject } = useProjects();
-  const { tasks, isLoading: tasksLoading, create, complete } = useTasks({ projectId: id });
+  const { tasks, isLoading: tasksLoading, error: tasksError, create, complete, refresh: refreshTasks } = useTasks({ projectId: id });
 
   const [title, setTitle] = useState("");
   const [importance, setImportance] = useState<Importance>("medium");
@@ -105,7 +107,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             </Card>
 
             <Card className="mb-4">
-              <CardHeader eyebrow="POST /api/tasks" title="Add a task" />
+              <CardHeader eyebrow="Add a task" title="New task" />
               <form onSubmit={handleAddTask} className="flex flex-col gap-2 sm:flex-row">
                 <input
                   value={title}
@@ -137,9 +139,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             </Card>
 
             <Card>
-              <CardHeader eyebrow="Live from /api/tasks" title="Tasks" />
+              <CardHeader eyebrow="Task list" title="Tasks" />
               {tasksLoading ? (
                 <Skeleton className="h-32 w-full" />
+              ) : tasksError ? (
+                <ErrorState
+                  message={friendlyApiError(tasksError, "Couldn't load this project's tasks.")}
+                  onRetry={() => refreshTasks()}
+                />
               ) : tasks.length === 0 ? (
                 <EmptyState icon={<ListChecks size={20} />} title="No tasks in this project yet" />
               ) : (

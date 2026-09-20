@@ -68,6 +68,12 @@ export interface Task {
   energy_requirement: EnergyLevel | null;
   deadline: string | null;
   completed_at: string | null;
+  // Deadline Engine outputs (PRD §19) — populated by services/deadline_service.py,
+  // never client-writable (see schemas/task.py note on TaskCreate/TaskUpdate).
+  recommended_deadline: string | null;
+  latest_safe_start: string | null;
+  risk_score: number | null;
+  completion_probability: number | null;
   estimated_hours: number | null;
   actual_hours: number | null;
   confidence_score: number | null;
@@ -123,6 +129,21 @@ export interface ReplanResponse {
   at_risk_tasks: Task[];
 }
 
+/**
+ * Dashboard hero payload (PRD §37) — a read of the last morning job's
+ * cached output. All fields are null/empty-safe for a brand-new install
+ * that hasn't had a morning run yet.
+ */
+export interface DailySummaryResponse {
+  generated_at: string | null;
+  scheduled_count: number;
+  next_task_id: number | null;
+  next_task_title: string | null;
+  narration: string | null;
+  narration_ai_generated: boolean;
+  notifications: Record<string, unknown>[];
+}
+
 export interface CalendarEvent {
   id: number;
   task_id: number | null;
@@ -145,6 +166,17 @@ export interface CalendarSyncResponse {
 }
 
 // --- Deadline Engine (services/deadline_service.py) -------------------------
+
+// Mirrors backend/schemas/schedule.BUFFER_MULTIPLIERS
+export const BUFFER_MULTIPLIERS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75] as const;
+
+// Mirrors backend/schemas/schedule.DailyPlanRead
+export interface DailyPlan {
+  plan_date: string;
+  buffer_multiplier: number;
+  started_at: string | null;
+  locked: boolean;
+}
 
 export type BufferLevel = "safe" | "default" | "aggressive";
 export type BufferStatus = "done" | "safe" | "tight" | "impossible";
@@ -237,6 +269,15 @@ export interface EstimationErrorResponse {
   by_category: CategoryEstimationError[];
 }
 
+export interface EstimationErrorTrendPoint {
+  date: string; // "YYYY-MM-DD"
+  average_error_pct: number;
+}
+
+export interface EstimationErrorTrendResponse {
+  points: EstimationErrorTrendPoint[];
+}
+
 export interface StreaksResponse {
   current_streak_days: number;
   longest_streak_days: number;
@@ -254,6 +295,231 @@ export interface ProductivityHoursResponse {
   by_hour: HourBucket[];
   best_hour: number | null;
   lookback_days: number;
+}
+
+// --- Execution Score (services/execution_score_service.py, PRD §15/§37) ---
+
+export type ExecutionScoreBand = "excellent" | "healthy" | "busy" | "high_risk" | "impossible";
+
+export interface ExecutionScoreComponent {
+  name: string;
+  score: number;
+  weight: number;
+  detail: string;
+}
+
+export interface ExecutionScoreResponse {
+  score: number;
+  band: ExecutionScoreBand;
+  headline: string;
+  components: ExecutionScoreComponent[];
+}
+
+export interface ExecutionScoreTrendPoint {
+  date: string; // "YYYY-MM-DD"
+  score: number;
+  band: ExecutionScoreBand;
+}
+
+export interface ExecutionScoreTrendResponse {
+  points: ExecutionScoreTrendPoint[];
+}
+
+// --- AI Memory Architecture (backend/api/memory.py, PRD §63) ---------------
+
+export type EpisodicEventType =
+  | "weekly_review"
+  | "project_completed"
+  | "milestone"
+  | "planning_decision";
+
+export interface EpisodicEvent {
+  id: number;
+  event_type: EpisodicEventType;
+  occurred_on: string; // "YYYY-MM-DD"
+  title: string;
+  summary: string;
+}
+
+export interface EpisodicMemoryResponse {
+  events: EpisodicEvent[];
+}
+
+export interface EstimationAccuracySummary {
+  overall_average_error_pct: number | null;
+  sample_count: number;
+  most_biased_category: string | null;
+  most_biased_direction: EstimationBias | null;
+}
+
+export interface LongTermProfileResponse {
+  generated_at: string | null;
+  preferred_work_hours: number[];
+  estimation_accuracy: EstimationAccuracySummary;
+  recent_completed_projects: string[];
+  longest_streak_days: number;
+}
+
+export type SemanticRelationType = "project_template" | "recurring_workflow";
+
+export interface SemanticRelation {
+  id: number;
+  relation_type: SemanticRelationType;
+  title: string;
+  summary: string;
+  subject_project_id: number | null;
+  object_project_id: number | null;
+}
+
+export interface SemanticMemoryResponse {
+  relations: SemanticRelation[];
+}
+
+// --- AI Execution Coach (services/ai_coach_service.py, PRD §24) ------------
+
+export interface ChatResponse {
+  agent: string;
+  message: string;
+  data: Record<string, unknown> | null;
+}
+
+// --- Notification System (services/notification_service.py, PRD §27) -----
+
+export type NotificationSeverity = "info" | "warning" | "critical";
+
+export interface NotificationItem {
+  type: string;
+  severity: NotificationSeverity;
+  message: string;
+  task_id: number | null;
+  action: string | null;
+}
+
+export interface NotificationsResponse {
+  notifications: NotificationItem[];
+}
+
+// --- Settings (backend/api/settings.py) -------------------------------------
+
+export interface UserSettings {
+  display_name: string;
+  email: string;
+  dark_mode: boolean;
+  weekday_start_hour: number;
+  weekday_end_hour: number;
+  weekend_start_hour: number;
+  weekend_end_hour: number;
+}
+
+export type UserSettingsUpdate = Partial<UserSettings>;
+
+export type TimeBlockCategory = "meal" | "class" | "gym" | "other";
+
+export interface TimeBlockCreate {
+  label: string;
+  category: TimeBlockCategory;
+  /** "HH:MM", 24-hour, local wall-clock time. */
+  start_time: string;
+  end_time: string;
+  /** 0=Monday .. 6=Sunday. */
+  days_of_week: number[];
+}
+
+export interface TimeBlock extends TimeBlockCreate {
+  id: string;
+}
+
+// --- Explainability layer (backend/services/explanation_service.py) ---------
+
+/** Raw 0-1 inputs behind priority_score, before weighting. Note
+ * `context_switch_cost` is a *cost* — lower is better, unlike the rest. */
+export interface PriorityComponents {
+  deadline_risk: number;
+  importance: number;
+  estimated_hours: number;
+  context_switch_cost: number;
+  energy_fit: number;
+}
+
+export interface NextTaskExplanation {
+  task_id: number;
+  title: string;
+  priority_score: number | null;
+  components: PriorityComponents;
+  unlocks_task_count: number;
+  reasons: string[];
+}
+
+export interface NextTaskExplanationResponse {
+  explanation: NextTaskExplanation | null;
+}
+
+export type EstimateBaseTier =
+  | "project_history"
+  | "trained_model"
+  | "importance_history"
+  | "default";
+
+export interface EstimateExplanation {
+  task_id: number;
+  title: string;
+  base_hours: number;
+  base_tier: EstimateBaseTier;
+  confidence: number;
+  category: string;
+  calibration_bias_pct: number | null;
+  calibration_sample_count: number;
+  calibration_applied_pct: number;
+  calibrated_hours: number;
+  reasons: string[];
+}
+
+export interface DeadlineRiskExplanation {
+  task_id: number;
+  title: string;
+  plan: TaskDeadlinePlan;
+  reasons: string[];
+}
+
+export interface ScheduleChangeExplanation {
+  occurred_on: string;
+  summary: string;
+  reasons: string[];
+}
+
+export interface ScheduleChangeExplanationResponse {
+  explanation: ScheduleChangeExplanation | null;
+}
+
+/** One category ml/calibration.py is actively applying to new estimates.
+ * `bias_pct` > 0 means actual work ran longer than predicted. */
+export interface CalibrationCategory {
+  category: string;
+  bias_pct: number;
+  sample_count: number;
+  confidence: number;
+}
+
+export interface CalibrationResponse {
+  categories: CalibrationCategory[];
+}
+
+// --- Demo workspace (backend/api/demo.py) ------------------------------------
+
+export interface DemoSeedResponse {
+  projects_created: number;
+  tasks_completed: number;
+  tasks_pending: number;
+  sessions_created: number;
+  predictions_created: number;
+  metrics_days: number;
+  /** True when a demo workspace already existed and nothing was created. */
+  already_seeded: boolean;
+}
+
+export interface DemoResetResponse {
+  projects_removed: number;
+  metrics_removed: number;
 }
 
 /** Thrown by services/api.ts for any non-2xx response. */
