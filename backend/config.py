@@ -37,10 +37,16 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 SQL_ECHO = False
 
 # ---------------------------------------------------------------------------
-# AI / Ollama (placeholder — filled in Milestone 4)
+# AI / LLM (Milestone 4 — originally local Ollama; swapped to OpenRouter's
+# hosted free tier so inference doesn't depend on a machine staying on and
+# a tunnel running — see backend/ai/ollama_client.py)
 # ---------------------------------------------------------------------------
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+# A ":free"-suffixed model slug. If OpenRouter retires this particular free
+# model, swap it via the OPENROUTER_MODEL env var — no code change needed.
+# Browse current free options at https://openrouter.ai/models?max_price=0
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
 
 # ---------------------------------------------------------------------------
 # Calendar (Milestone 6)
