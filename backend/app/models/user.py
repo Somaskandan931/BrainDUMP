@@ -53,5 +53,12 @@ class User(Base, TimestampMixin):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # True from creation for Google/GitHub accounts (the provider already
+    # proved the address). False for a fresh email+password registration
+    # until the owner clicks the link from services/email_service.py --
+    # see api/v1/auth.py's /verify-email/* routes and config.py's
+    # EMAIL_VERIFICATION_REQUIRED for whether login actually enforces this.
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email!r}>"

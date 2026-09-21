@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Mail, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { authApi } from "@/services/api";
 import { GoogleButton } from "@/components/auth/GoogleButton";
 import { GithubButton } from "@/components/auth/GithubButton";
 import { AuthCard, AuthDivider, AuthError } from "@/components/auth/AuthCard";
@@ -16,17 +17,40 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [unverified, setUnverified] = useState(false);
+  const [resent, setResent] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setUnverified(false);
+    setResent(false);
     setSubmitting(true);
     try {
       await login(email, password);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      if (err instanceof ApiError) {
+        setError(err.message);
+        // 403 here only ever means EMAIL_VERIFICATION_REQUIRED and an
+        // unclicked link (see api/v1/auth.py login) -- everything else
+        // that can go wrong (bad password, deactivated) is 401/other.
+        setUnverified(err.status === 403 && err.message.toLowerCase().includes("verify"));
+      } else {
+        setError("Something went wrong.");
+      }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function resendVerification() {
+    setResent(false);
+    try {
+      await authApi.resendVerificationEmail(email);
+      setResent(true);
+    } catch {
+      // resend is best-effort UI sugar; the request endpoint itself
+      // never reveals success/failure, so silently no-op here too.
     }
   }
 
@@ -71,7 +95,35 @@ export default function LoginPage() {
           autoComplete="current-password"
         />
 
+        <div className="flex justify-end">
+          <Link
+            href="/forgot-password"
+            className="text-xs font-medium text-ink-muted transition-colors hover:text-primary"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
         {error && <AuthError message={error} />}
+
+        {unverified && (
+          <div className="text-xs text-ink-muted">
+            {resent ? (
+              "If that account needs verifying, a new link is on its way."
+            ) : (
+              <>
+                Didn&apos;t get the link?{" "}
+                <button
+                  type="button"
+                  onClick={resendVerification}
+                  className="font-medium text-primary underline underline-offset-4"
+                >
+                  Resend verification email
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         <button
           type="submit"

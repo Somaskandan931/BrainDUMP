@@ -11,6 +11,8 @@
  */
 
 import {
+  ActivityItem,
+  ActivityPage,
   ApiError,
   AuthResponse,
   AuthUser,
@@ -34,6 +36,7 @@ import {
   GoogleCalendarStatus,
   GoogleConnectResponse,
   LongTermProfileResponse,
+  MessageResponse,
   NextTaskExplanationResponse,
   NextTaskResponse,
   NotificationsResponse,
@@ -161,6 +164,14 @@ export const authApi = {
   loginWithGithub: (code: string) =>
     post<AuthResponse>("/api/auth/github", { code }),
   me: () => get<AuthUser>("/api/auth/me"),
+  resendVerificationEmail: (email: string) =>
+    post<MessageResponse>("/api/auth/verify-email/resend", { email }),
+  confirmEmail: (token: string) =>
+    post<MessageResponse>("/api/auth/verify-email/confirm", { token }),
+  requestPasswordReset: (email: string) =>
+    post<MessageResponse>("/api/auth/password-reset/request", { email }),
+  confirmPasswordReset: (token: string, newPassword: string) =>
+    post<MessageResponse>("/api/auth/password-reset/confirm", { token, new_password: newPassword }),
 };
 
 // --- Projects ---------------------------------------------------------------
@@ -205,6 +216,10 @@ export const tasksApi = {
   explainEstimate: (id: number) => get<EstimateExplanation>(`/api/tasks/${id}/explain-estimate`),
   explainDeadlineRisk: (id: number) =>
     get<DeadlineRiskExplanation>(`/api/tasks/${id}/explain-deadline-risk`),
+  // "What happened to this task, and why?" -- newest first (activity_service.py).
+  // Includes any deadline the planner moved, with the recorded reason.
+  history: (id: number, limit = 100) =>
+    get<ActivityItem[]>(`/api/tasks/${id}/history?limit=${limit}`),
 };
 
 // --- Planner (AI agents + scheduler) ---------------------------------------
@@ -304,6 +319,29 @@ export const settingsApi = {
   timeBlocks: () => get<TimeBlock[]>("/api/settings/time-blocks"),
   createTimeBlock: (data: TimeBlockCreate) => post<TimeBlock>("/api/settings/time-blocks", data),
   removeTimeBlock: (id: string) => del<void>(`/api/settings/time-blocks/${id}`),
+};
+
+// --- Activity / audit trail (backend/api/v1/activity.py) --------------------
+// Read-only by design: the server writes these rows itself when something
+// happens, so there is no create/update/delete here.
+
+export const activityApi = {
+  list: (params?: {
+    entityType?: string;
+    entityId?: number;
+    action?: string;
+    limit?: number;
+    beforeId?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.entityType) qs.set("entity_type", params.entityType);
+    if (params?.entityId != null) qs.set("entity_id", String(params.entityId));
+    if (params?.action) qs.set("action", params.action);
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.beforeId != null) qs.set("before_id", String(params.beforeId));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return get<ActivityPage>(`/api/activity/${suffix}`);
+  },
 };
 
 export { ApiError, BASE_URL };

@@ -35,6 +35,7 @@ from backend.app.models.enums import EpisodicEventType, EventSource, SyncStatus,
 from backend.app.models.session import WorkSession
 from backend.app.models.task import Task
 from backend.app.services.workspace import user_settings_service
+from backend.app.services.workspace.activity_service import ACTOR_USER, Action, log_activity
 
 # Episodic Memory (PRD §63 "Milestones"): a project crossing one of these
 # fractions of its tasks completed is a milestone in its own right,
@@ -426,7 +427,7 @@ def schedule_pending_tasks(
     return result
 
 
-def complete_task(db: Session, task: Task) -> Task:
+def complete_task(db: Session, task: Task, *, actor: str = ACTOR_USER) -> Task:
     """
     Mark `task` complete and close the loop with the ML layer: if the
     user never set actual_hours by hand, sum the WorkSessions scheduled
@@ -452,6 +453,18 @@ def complete_task(db: Session, task: Task) -> Task:
 
     estimator.resolve_prediction(db, task)
 
+    log_activity(
+        db,
+        Action.TASK_COMPLETED,
+        entity_type="task",
+        entity_id=task.id,
+        actor=actor,
+        details={
+            "title": task.title,
+            "estimated_hours": task.estimated_hours,
+            "actual_hours": task.actual_hours,
+        },
+    )
     db.commit()
     db.refresh(task)
 
@@ -460,7 +473,7 @@ def complete_task(db: Session, task: Task) -> Task:
     return task
 
 
-def skip_task(db: Session, task: Task) -> Task:
+def skip_task(db: Session, task: Task, *, actor: str = ACTOR_USER) -> Task:
     """
     "Not this one right now" — push `task` to the back of today's order
     without marking it done or touching its calendar schedule. Reuses
@@ -477,6 +490,14 @@ def skip_task(db: Session, task: Task) -> Task:
     )
     task.sort_order = (max_sort_order or 0) + 1
 
+    log_activity(
+        db,
+        Action.TASK_SKIPPED,
+        entity_type="task",
+        entity_id=task.id,
+        actor=actor,
+        details={"title": task.title},
+    )
     db.commit()
     db.refresh(task)
     return task

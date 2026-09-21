@@ -85,6 +85,65 @@ AUTH_REGISTER_MAX_PER_IP = int(os.getenv("AUTH_REGISTER_MAX_PER_IP", "10"))
 AUTH_REGISTER_WINDOW_SECONDS = int(os.getenv("AUTH_REGISTER_WINDOW_SECONDS", "3600"))  # 1 hour
 
 # ---------------------------------------------------------------------------
+# Email (verification + password reset)
+# ---------------------------------------------------------------------------
+# SMTP is optional. Unset SMTP_HOST => email_service.py logs the message
+# instead of sending it, so registration/reset still work end-to-end on a
+# laptop with zero setup. Set every SMTP_* var for a real deployment.
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+# STARTTLS is the default for port 587; set SMTP_USE_SSL=1 for port 465 (implicit TLS).
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "0") == "1"
+EMAIL_FROM_ADDRESS = os.getenv("EMAIL_FROM_ADDRESS", "no-reply@braindump.app")
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "BrainDUMP")
+
+# When true, /api/auth/login rejects password-login accounts that haven't
+# clicked their verification link yet (Google/GitHub accounts are always
+# pre-verified — a third party already confirmed the address). Defaults to
+# off so a fresh checkout/local dev/test run keeps working with zero email
+# setup; turn this on once SMTP is actually configured for production.
+EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "0") == "1"
+
+EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES = int(os.getenv("EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES", str(60 * 24)))  # 24h
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
+
+# Brute-force limits for the two new public, unauthenticated email-flow
+# endpoints -- same shape as AUTH_REGISTER_MAX_PER_IP above, separate
+# counters so a burst of password-reset requests can't also lock out
+# verification-email resends (or vice versa).
+AUTH_EMAIL_ACTION_MAX_PER_IP = int(os.getenv("AUTH_EMAIL_ACTION_MAX_PER_IP", "10"))
+AUTH_EMAIL_ACTION_WINDOW_SECONDS = int(os.getenv("AUTH_EMAIL_ACTION_WINDOW_SECONDS", "3600"))  # 1 hour
+
+# ---------------------------------------------------------------------------
+# Redis (shared rate-limit state; optional)
+# ---------------------------------------------------------------------------
+# Unset by default: the app runs single-process/single-instance on the
+# in-memory limiter with zero setup (see auth/rate_limit.py). Set REDIS_URL
+# once you run more than one API process/instance -- otherwise each process
+# has its own counters and the real per-account/per-IP limits silently
+# multiply by the instance count. Same value your job queue (future
+# ARQ/Celery worker) would use, e.g. redis://localhost:6379/0.
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+# ---------------------------------------------------------------------------
+# Error monitoring (optional; core/sentry.py)
+# ---------------------------------------------------------------------------
+# Unset by default -- errors just go to stdout via the structured logger
+# (core/logging_config.py). Set SENTRY_DSN (from your Sentry project's
+# Settings -> Client Keys) to also get exception tracking, stack traces,
+# and request context there. ENVIRONMENT tags events so Sentry can
+# separate "production" issues from a developer's local run.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+# Fraction of requests to also capture as performance traces (0.0-1.0).
+# Errors are always captured regardless of this; this only controls
+# trace/APM sampling, which costs Sentry quota. Low default on purpose --
+# raise it temporarily while debugging a specific performance issue.
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))
+
+# ---------------------------------------------------------------------------
 # AI / LLM (Milestone 4 — originally local Ollama; swapped to OpenRouter's
 # hosted free tier so inference doesn't depend on a machine staying on and
 # a tunnel running — see backend/ai/ollama_client.py)
@@ -101,6 +160,13 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instru
 # services/usage_service.py. 0 disables the check entirely (unlimited) --
 # do not do this with a paid model key.
 AI_DAILY_CALL_LIMIT = int(os.getenv("AI_DAILY_CALL_LIMIT", "50"))
+
+# ---------------------------------------------------------------------------
+# Audit trail (activity_log) retention
+# ---------------------------------------------------------------------------
+# The nightly job deletes each user's activity rows older than this many days
+# (services/workspace/activity_service.purge_older_than). 0 keeps everything.
+ACTIVITY_LOG_RETENTION_DAYS = int(os.getenv("ACTIVITY_LOG_RETENTION_DAYS", "180"))
 
 # ---------------------------------------------------------------------------
 # Calendar (Milestone 6; per-user OAuth as of the multi-user auth refactor)

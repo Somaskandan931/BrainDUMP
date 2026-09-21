@@ -31,6 +31,7 @@ from backend.app.models.enums import EpisodicEventType, Importance, TaskStatus
 from backend.app.models.session import WorkSession
 from backend.app.models.task import Task
 from backend.app.services.planning import scheduler_service
+from backend.app.services.workspace.activity_service import ACTOR_USER, Action, log_activity
 
 
 def _active_tasks_with_deadline(db: Session) -> List[Task]:
@@ -101,15 +102,40 @@ def _clear_future_schedule(db: Session, now: datetime) -> None:
     db.flush()
 
 
-def demote_task(db: Session, task: Task, push_days: int = 3) -> Task:
+def demote_task(
+    db: Session, task: Task, push_days: int = 3, *, actor: str = ACTOR_USER
+) -> Task:
     """
     Push a low-priority at-risk task's deadline out rather than dropping
     it, so compress_schedule()'s next pass has a real chance of fitting
     it in. Only ever called on LOW/MEDIUM importance tasks — see
     replan()'s selection below.
+
+    Records the move in the audit trail with the actual reason and the
+    before/after dates -- this is the row behind "why did BrainDUMP move
+    my deadline?" (GET /api/tasks/{id}/history). Staged on `db`, not
+    committed: replan() commits right after demoting.
     """
     if task.deadline is not None:
-        task.deadline = task.deadline + timedelta(days=push_days)
+        previous = task.deadline
+        task.deadline = previous + timedelta(days=push_days)
+
+        previous_utc = previous if previous.tzinfo is not None else previous.replace(tzinfo=timezone.utc)
+        log_activity(
+            db,
+            Action.TASK_DEADLINE_CHANGED,
+            entity_type="task",
+            entity_id=task.id,
+            actor=actor,
+            details={
+                "reason": "at_risk_demoted",
+                "importance": task.importance,
+                "was_overdue": previous_utc <= datetime.now(timezone.utc),
+                "push_days": push_days,
+                "from": previous,
+                "to": task.deadline,
+            },
+        )
     return task
 
 
@@ -260,7 +286,7 @@ def persist_deadline_plan(db: Session, task: Task, plan: Optional[dict] = None) 
     return task
 
 
-def replan(db: Session) -> dict:
+def replan(db: Session, *, actor: str = ACTOR_USER) -> dict:
     """
     Full replan pass, triggered by POST /api/planner/replan (a missed
     deadline, a slipped day, or just the user asking for a fresh look):
@@ -276,12 +302,16 @@ def replan(db: Session) -> dict:
     Returns a plain dict (see schemas/planner.py ReplanResponse for the
     API-facing shape) rather than an ORM object, since this is a summary
     of an action taken, not a single persisted row.
+
+    `actor` says who asked for it ("user" for POST /api/planner/replan,
+    "system" for the nightly job) and is stamped onto the audit rows this
+    pass writes.
     """
     now = datetime.now(timezone.utc)
 
     at_risk_before = detect_at_risk_tasks(db, now)
     demoted = [
-        demote_task(db, t)
+        demote_task(db, t, actor=actor)
         for t in at_risk_before
         if t.importance in (Importance.LOW, Importance.MEDIUM)
     ]
@@ -295,6 +325,24 @@ def replan(db: Session) -> dict:
     db.commit()
 
     _record_replan_episode(db, now=now, demoted=demoted, rescheduled=rescheduled, at_risk_after=at_risk_after)
+
+    # Same "only when the pass actually changed something" rule as the
+    # episodic record above: a quiet nightly run isn't worth a row per user
+    # per night. Own commit -- everything replan() did has already been
+    # committed by this point, so this can't be folded into that transaction.
+    if demoted or rescheduled:
+        log_activity(
+            db,
+            Action.SCHEDULE_REPLANNED,
+            entity_type="schedule",
+            actor=actor,
+            details={
+                "rescheduled_count": len(rescheduled),
+                "demoted_task_ids": [t.id for t in demoted],
+                "at_risk_task_ids": [t.id for t in at_risk_after],
+            },
+        )
+        db.commit()
 
     return {
         "rescheduled_count": len(rescheduled),

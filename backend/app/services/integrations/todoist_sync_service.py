@@ -39,6 +39,7 @@ from backend.app.models.enums import TaskStatus
 from backend.app.models.task import Task
 from backend.app.services.integrations import integration_credentials_service
 from backend.app.services.planning import scheduler_service
+from backend.app.services.workspace.activity_service import ACTOR_SYSTEM
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ def pull_todoist_tasks(db: Session) -> tuple:
             # deleted it there. Treat as completed rather than
             # cancelled: closing a task is the far more common reason
             # it would vanish from the active list.
-            scheduler_service.complete_task(db, local_task)
+            scheduler_service.complete_task(db, local_task, actor=ACTOR_SYSTEM)
 
     db.commit()
     return pulled, errors

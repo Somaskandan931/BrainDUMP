@@ -553,10 +553,49 @@ export interface AuthUser {
   name?: string | null;
   google_picture_url?: string | null;
   github_avatar_url?: string | null;
+  is_verified: boolean;
 }
 
 export interface AuthResponse {
   access_token: string;
   token_type: string;
   user: AuthUser;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
+
+// --- Activity / audit trail (backend/api/v1/activity.py) ------------------
+
+export type ActivityActor = "user" | "system" | "ai";
+
+export interface ActivityItem {
+  id: number;
+  /** Dotted "<noun>.<past-tense verb>", e.g. "task.completed". */
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  actor: ActivityActor;
+  /** Free-form and sanitized server-side; shape depends on `action`. */
+  details: Record<string, unknown> | null;
+  /** ISO-8601 with an explicit UTC offset. */
+  created_at: string;
+}
+
+export interface ActivityPage {
+  items: ActivityItem[];
+  /** Pass back as `beforeId` for the next page; null on the last page. */
+  next_before_id: number | null;
+}
+
+/** `details` of a "task.deadline_changed" row: why the planner moved a deadline. */
+export interface DeadlineChangedDetails {
+  reason: "at_risk_demoted";
+  importance: string;
+  was_overdue: boolean;
+  push_days: number;
+  from: string;
+  to: string;
 }
