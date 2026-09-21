@@ -27,10 +27,5 @@ email-validator
 # Postgres driver -- only used when DATABASE_URL points at postgresql://;
 # harmless to install even when running on the default SQLite.
 psycopg[binary]
-# Shared rate-limit state across instances -- only used when REDIS_URL is
-# set (auth/rate_limit.py falls back to in-memory otherwise). redis-py's
-# built-in async/sync client, no separate hiredis needed for our volume.
-redis>=5.0,<6.0
-# Error monitoring -- only initialized when SENTRY_DSN is set
-# (core/sentry.py). Harmless to install with it unset.
-sentry-sdk[fastapi]>=2.0,<3.0
+# GET /metrics (main.py) -- config.ENABLE_METRICS
+prometheus-fastapi-instrumentator

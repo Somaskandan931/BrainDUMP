@@ -41,6 +41,26 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if config.IS_SQLITE else {},
 )
 
+
+if config.IS_SQLITE:
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
+        """SQLite ignores every ON DELETE CASCADE/SET NULL in the schema
+        unless foreign key enforcement is turned on per-connection -- it is
+        off by default and there is no server-wide setting. Postgres has no
+        such flag (its FKs are always enforced), so this only applies here.
+
+        Without this, deleting a user (or anything else a FK cascades from)
+        silently leaves every dependent row in place on SQLite, while the
+        exact same delete correctly cascades on Postgres -- a difference
+        that previously only surfaced by hand-enabling the pragma inside a
+        single test (see tests/unit/test_foreign_keys.py, which now checks
+        this listener instead).
+        """
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -66,8 +86,7 @@ def get_db():
 # ---------------------------------------------------------------------------
 # Every tenant-owned table (Project, Task, Subtask, Dependency,
 # WorkSession, CalendarEvent, Prediction, Setting, DailyPlan,
-# EpisodicMemory, SemanticMemory, ProductivityMetric, UsageRecord,
-# ActivityLog) carries a
+# EpisodicMemory, SemanticMemory, ProductivityMetric) carries a
 # `user_id` FK. Rather than hand-adding `.filter(Model.user_id ==
 # current_user.id)` to every one of the ~40 query sites scattered
 # across services/, ai/, ml/, and scheduler/ (and trusting every
@@ -124,6 +143,9 @@ def _tenant_models():
         UsageRecord,
         ActivityLog,
     )
+    # NOTE: RefreshToken is deliberately NOT included here -- it's looked
+    # up by raw token hash during /api/auth/refresh, before any
+    # session.info["user_id"] exists to scope by (same reasoning as User).
 
 
 @event.listens_for(Session, "do_orm_execute")

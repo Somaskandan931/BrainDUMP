@@ -9,6 +9,8 @@ get_current_user code paths without any of them importing each other.
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -30,12 +32,30 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(subject: str | int, expires_minutes: int | None = None) -> str:
     """`subject` is the user id, stored as the JWT `sub` claim (JWTs
-    require string claims, so the caller's int id is stringified)."""
+    require string claims, so the caller's int id is stringified).
+
+    Defaults to config.ACCESS_TOKEN_EXPIRE_MINUTES (short-lived) now that
+    long-lived sessions are handled by the HttpOnly-cookie refresh token
+    instead (see generate_refresh_token below and auth/token_service.py).
+    """
     expire = datetime.now(timezone.utc) + timedelta(
-        minutes=expires_minutes if expires_minutes is not None else config.JWT_EXPIRE_MINUTES
+        minutes=expires_minutes if expires_minutes is not None else config.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     payload: dict[str, Any] = {"sub": str(subject), "exp": expire}
     return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm=config.JWT_ALGORITHM)
+
+
+def generate_refresh_token() -> tuple[str, str]:
+    """Returns (raw_token, token_hash). The raw value goes in the HttpOnly
+    cookie and is never stored; only its SHA-256 hash is persisted
+    (models/refresh_token.py), the same way a password is never stored in
+    plaintext -- a leaked database never yields a usable session."""
+    raw = secrets.token_urlsafe(48)
+    return raw, hash_refresh_token(raw)
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:

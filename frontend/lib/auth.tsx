@@ -18,7 +18,7 @@ interface AuthContextValue {
   register: (email: string, password: string, name?: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginWithGithub: (code: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -67,7 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Revoke the refresh session server-side first (best-effort -- an
+    // unreachable backend shouldn't strand the user signed in locally),
+    // then clear the local access token regardless.
+    try {
+      await authApi.logout();
+    } catch {
+      // ignore -- clearToken() below still signs the user out locally
+    }
     clearToken();
     setUser(null);
   }, []);

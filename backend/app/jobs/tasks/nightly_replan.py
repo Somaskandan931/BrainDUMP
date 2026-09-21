@@ -43,7 +43,6 @@ import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-from backend.app.core import config
 from backend.app.db.database import SessionLocal, owner_id
 from backend.app.ai import long_term_memory
 from backend.app.integrations.google_calendar import GoogleCalendarError
@@ -57,7 +56,7 @@ from backend.app.services.integrations import calendar_sync_service
 from backend.app.services.planning import deadline_service
 from backend.app.services.productivity import execution_score_service, notification_service
 from backend.app.services.workspace import activity_service
-from backend.app.services.workspace.activity_service import ACTOR_SYSTEM
+from backend.app.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ def _run_nightly_job_for_user(db, today: date, now: datetime) -> dict:
     -- see run_nightly_job()), run against a session already scoped
     (db.info["user_id"] set) to exactly one user."""
     metric = _today_metrics(db, today, now)
-    replan_result = deadline_service.replan(db, actor=ACTOR_SYSTEM)
+    replan_result = deadline_service.replan(db, actor="system")
 
     try:
         calendar_push = calendar_sync_service.push_pending_sessions(db)
@@ -165,20 +164,10 @@ def _run_nightly_job_for_user(db, today: date, now: datetime) -> dict:
         db.add(setting)
     else:
         setting.value = json.dumps(summary)
-    db.commit()
 
-    # Keep the audit trail bounded (config.ACTIVITY_LOG_RETENTION_DAYS; 0 =
-    # keep everything). Its own transaction and wrapped like the memory
-    # refresh above: pruning old history is housekeeping and must never
-    # undo or fail the replan that already committed.
-    try:
-        purged = activity_service.purge_older_than(db, config.ACTIVITY_LOG_RETENTION_DAYS)
-        db.commit()
-        if purged:
-            logger.info("Nightly job (user %s): pruned %d old activity row(s)", db.info.get("user_id"), purged)
-    except Exception as exc:  # noqa: BLE001 - see comment above
-        db.rollback()
-        logger.warning("Nightly job: activity log purge failed (%s)", exc)
+    # Retention: purge this user's old activity_log rows (0 keeps everything).
+    activity_service.purge_older_than(db, user_id=owner_id(db), days=config.ACTIVITY_LOG_RETENTION_DAYS)
+    db.commit()
 
     logger.info(
         "Nightly job (user %s): %d completed today, %d rescheduled, %d at risk",

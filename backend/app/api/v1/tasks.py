@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1.deps import get_scoped_db
@@ -21,6 +21,7 @@ from backend.app.db.database import owner_id
 from backend.app.models.project import Project
 from backend.app.models.task import Task, Subtask
 from backend.app.models.enums import TaskStatus
+from backend.app.schemas.activity import ActivityEntryOut
 from backend.app.schemas.task import (
     TaskCreate,
     TaskUpdate,
@@ -33,28 +34,14 @@ from backend.app.schemas.task import (
 from backend.app.schemas.deadline import TaskDeadlinePlan
 from backend.app.services.planning import deadline_service
 from backend.app.services.ai import explanation_service
-from backend.app.services.workspace import activity_service
-from backend.app.services.workspace.activity_service import Action, log_activity
-from backend.app.schemas.activity import ActivityRead
 from backend.app.services.planning.scheduler_service import (
     complete_task as complete_task_service,
     skip_task as skip_task_service,
 )
+from backend.app.services.workspace import activity_service
+from backend.app.services.workspace.activity_service import diff_changes, log_activity
 
 router = APIRouter()
-
-# Fields whose old -> new values are worth recording on an edit. Everything
-# else that changed (description, notes, sort_order...) is logged by name only.
-_TRACKED_TASK_FIELDS = (
-    "title",
-    "status",
-    "importance",
-    "deadline",
-    "estimated_hours",
-    "actual_hours",
-    "project_id",
-    "energy_requirement",
-)
 
 
 def _require_own_project(db: Session, project_id: Optional[int]) -> None:
@@ -73,13 +60,10 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_scoped_db)) -> Ta
     _require_own_project(db, payload.project_id)
     task = Task(user_id=owner_id(db), **payload.model_dump())
     db.add(task)
-    db.flush()  # assigns task.id so the audit row below can point at it
+    db.flush()  # assigns task.id before the log row references it
     log_activity(
-        db,
-        Action.TASK_CREATED,
-        entity_type="task",
-        entity_id=task.id,
-        details={"title": task.title, "project_id": task.project_id, "source": "manual"},
+        db, user_id=owner_id(db), action="task.created", entity_type="task", entity_id=task.id,
+        details={"title": task.title, "project_id": task.project_id},
     )
     db.commit()
     db.refresh(task)
@@ -141,12 +125,17 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_sco
 
     changes = payload.model_dump(exclude_unset=True)
     _require_own_project(db, changes.get("project_id"))
-    diff = activity_service.diff_changes(task, changes, _TRACKED_TASK_FIELDS)  # before the setattr below
+    before = {field: getattr(task, field) for field in changes}
     for field, value in changes.items():
         setattr(task, field, value)
 
-    if diff:  # a no-op PUT records nothing
-        log_activity(db, Action.TASK_UPDATED, entity_type="task", entity_id=task.id, details=diff)
+    diff = diff_changes(before, changes)
+    if diff:  # a no-op PUT (every field resubmitted unchanged) logs nothing
+        log_activity(
+            db, user_id=owner_id(db), action="task.updated", entity_type="task", entity_id=task.id,
+            details={"changes": diff},
+        )
+
     db.commit()
     db.refresh(task)
     return task
@@ -166,15 +155,8 @@ def archive_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    previous_status = task.status
     task.status = TaskStatus.ARCHIVED
-    log_activity(
-        db,
-        Action.TASK_ARCHIVED,
-        entity_type="task",
-        entity_id=task.id,
-        details={"title": task.title, "from_status": previous_status},
-    )
+    log_activity(db, user_id=owner_id(db), action="task.archived", entity_type="task", entity_id=task.id)
     db.commit()
     db.refresh(task)
     return task
@@ -185,7 +167,10 @@ def complete_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return complete_task_service(db, task)
+    result = complete_task_service(db, task)
+    log_activity(db, user_id=owner_id(db), action="task.completed", entity_type="task", entity_id=task.id)
+    db.commit()
+    return result
 
 
 @router.post("/{task_id}/skip", response_model=TaskRead)
@@ -194,7 +179,21 @@ def skip_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return skip_task_service(db, task)
+    result = skip_task_service(db, task)
+    log_activity(db, user_id=owner_id(db), action="task.skipped", entity_type="task", entity_id=task.id)
+    db.commit()
+    return result
+
+
+@router.get("/{task_id}/history", response_model=List[ActivityEntryOut])
+def get_task_history(task_id: int, db: Session = Depends(get_scoped_db)) -> list:
+    """What happened to this task, newest first -- including any deadline
+    the planner pushed out and why (see jobs/tasks/nightly_replan.py and
+    services/planning/scheduler_service.py's demote_task)."""
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return activity_service.get_entity_history(db, user_id=owner_id(db), entity_type="task", entity_id=task_id)
 
 
 @router.get("/{task_id}/deadline-plan", response_model=TaskDeadlinePlan)
@@ -239,27 +238,6 @@ def explain_deadline_risk(task_id: int, db: Session = Depends(get_scoped_db)) ->
     if task.deadline is None:
         raise HTTPException(status_code=400, detail="Task has no deadline to explain risk for")
     return explanation_service.explain_deadline_risk(db, task)
-
-
-@router.get("/{task_id}/history", response_model=List[ActivityRead])
-def get_task_history(
-    task_id: int,
-    limit: int = Query(default=100, ge=1, le=activity_service.MAX_PAGE_SIZE),
-    db: Session = Depends(get_scoped_db),
-) -> list:
-    """
-    'What happened to this task, and why?' — every recorded event for it,
-    newest first: created (and by what), edited, completed/skipped/archived,
-    and any deadline the planner pushed out (with the reason and the
-    before/after dates). This is the real reasoning captured when it
-    happened, not an after-the-fact guess. 404 for a task that isn't the
-    caller's, same as the other task routes.
-    """
-    task = db.get(Task, task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    rows, _ = activity_service.list_activity(db, entity_type="task", entity_id=task.id, limit=limit)
-    return rows
 
 
 # --- Subtask CRUD (nested under a task) ---------------------------------

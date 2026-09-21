@@ -11,8 +11,8 @@
  */
 
 import {
-  ActivityItem,
-  ActivityPage,
+  ActivityEntry,
+  ActivityFeedResponse,
   ApiError,
   AuthResponse,
   AuthUser,
@@ -36,7 +36,6 @@ import {
   GoogleCalendarStatus,
   GoogleConnectResponse,
   LongTermProfileResponse,
-  MessageResponse,
   NextTaskExplanationResponse,
   NextTaskResponse,
   NotificationsResponse,
@@ -65,10 +64,14 @@ const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
 
 // --- Auth token storage -----------------------------------------------------
-// A plain localStorage string, not a cookie: this is a local-first app with
-// no server-rendered authenticated pages, so there's nothing that needs the
-// token available server-side. lib/auth.tsx is the only other place that
-// reads/writes this key directly.
+// The short-lived access token lives in localStorage and is attached as a
+// Bearer header (below); there's still no server-rendered authenticated page
+// that needs it available server-side. The long-lived session itself now
+// lives in an HttpOnly refresh-token cookie the browser holds automatically
+// (see _set_refresh_cookie in backend/api/auth.py) -- localStorage never
+// sees that token, which is the point: it can't be read by JS/XSS, only
+// exchanged via POST /api/auth/refresh (see refreshAccessToken below).
+// lib/auth.tsx is the only other place that reads/writes the TOKEN_KEY.
 const TOKEN_KEY = "brain_dump_token";
 const AUTH_EVENT = "brain-dump-auth-cleared";
 
@@ -93,9 +96,48 @@ export function onAuthCleared(handler: () => void): () => void {
   return () => window.removeEventListener(AUTH_EVENT, handler);
 }
 
+// --- Silent refresh-on-401 ---------------------------------------------------
+// The backend now also sets an HttpOnly refresh-token cookie on every login
+// path (see backend/api/auth.py's _issue_session). `credentials: "include"`
+// below is what makes the browser actually send/accept that cookie against
+// BASE_URL. A bare token expiry (access tokens are short-lived,
+// config.ACCESS_TOKEN_EXPIRE_MINUTES) shouldn't drop the user back to
+// /login: we get exactly one shot at POST /api/auth/refresh to mint a new
+// access token from the cookie, then retry the original request once. Only
+// if that refresh itself fails (cookie missing/expired/reused) do we treat
+// it as a real sign-out via clearToken(). Concurrent 401s share one
+// in-flight refresh instead of each firing their own POST /refresh.
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const body = (await res.json().catch(() => null)) as AuthResponse | null;
+      if (!body?.access_token) return null;
+      setToken(body.access_token);
+      return body.access_token;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
+const AUTH_ROUTES = new Set(["/api/auth/login", "/api/auth/register", "/api/auth/refresh"]);
+
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _isRetry = false
 ): Promise<T> {
   const token = getToken();
   let res: Response;
@@ -107,6 +149,7 @@ async function request<T>(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
+      credentials: "include",
       cache: "no-store",
     });
   } catch {
@@ -118,7 +161,13 @@ async function request<T>(
     );
   }
 
-  if (res.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/register") {
+  if (res.status === 401 && !_isRetry && !AUTH_ROUTES.has(path)) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      return request<T>(path, options, true);
+    }
+    clearToken();
+  } else if (res.status === 401 && AUTH_ROUTES.has(path) && path !== "/api/auth/login" && path !== "/api/auth/register") {
     clearToken();
   }
 
@@ -164,14 +213,13 @@ export const authApi = {
   loginWithGithub: (code: string) =>
     post<AuthResponse>("/api/auth/github", { code }),
   me: () => get<AuthUser>("/api/auth/me"),
-  resendVerificationEmail: (email: string) =>
-    post<MessageResponse>("/api/auth/verify-email/resend", { email }),
-  confirmEmail: (token: string) =>
-    post<MessageResponse>("/api/auth/verify-email/confirm", { token }),
-  requestPasswordReset: (email: string) =>
-    post<MessageResponse>("/api/auth/password-reset/request", { email }),
-  confirmPasswordReset: (token: string, newPassword: string) =>
-    post<MessageResponse>("/api/auth/password-reset/confirm", { token, new_password: newPassword }),
+  // Mints a new access token from the HttpOnly refresh cookie. request()
+  // above already calls this internally on a 401; exposed here mainly for
+  // an explicit "restore session on app load" call from lib/auth.tsx.
+  refresh: () => post<AuthResponse>("/api/auth/refresh"),
+  // Revokes the refresh session server-side and clears the cookie. Safe to
+  // call even with no session (backend no-ops rather than 401ing).
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
 };
 
 // --- Projects ---------------------------------------------------------------
@@ -216,10 +264,30 @@ export const tasksApi = {
   explainEstimate: (id: number) => get<EstimateExplanation>(`/api/tasks/${id}/explain-estimate`),
   explainDeadlineRisk: (id: number) =>
     get<DeadlineRiskExplanation>(`/api/tasks/${id}/explain-deadline-risk`),
-  // "What happened to this task, and why?" -- newest first (activity_service.py).
-  // Includes any deadline the planner moved, with the recorded reason.
-  history: (id: number, limit = 100) =>
-    get<ActivityItem[]>(`/api/tasks/${id}/history?limit=${limit}`),
+  // Full audit trail for one task (create/update/complete/skip/archive/
+  // deadline-pushed), newest first. Backed by activity_service.get_entity_history.
+  history: (id: number) => get<ActivityEntry[]>(`/api/tasks/${id}/history`),
+};
+
+// --- Activity (account-wide audit feed, backend/api/v1/activity.py) --------
+
+export const activityApi = {
+  list: (params?: {
+    entityType?: string;
+    entityId?: number;
+    action?: string;
+    cursor?: number;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.entityType) qs.set("entity_type", params.entityType);
+    if (params?.entityId != null) qs.set("entity_id", String(params.entityId));
+    if (params?.action) qs.set("action", params.action);
+    if (params?.cursor != null) qs.set("cursor", String(params.cursor));
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return get<ActivityFeedResponse>(`/api/activity/${suffix}`);
+  },
 };
 
 // --- Planner (AI agents + scheduler) ---------------------------------------
@@ -319,29 +387,6 @@ export const settingsApi = {
   timeBlocks: () => get<TimeBlock[]>("/api/settings/time-blocks"),
   createTimeBlock: (data: TimeBlockCreate) => post<TimeBlock>("/api/settings/time-blocks", data),
   removeTimeBlock: (id: string) => del<void>(`/api/settings/time-blocks/${id}`),
-};
-
-// --- Activity / audit trail (backend/api/v1/activity.py) --------------------
-// Read-only by design: the server writes these rows itself when something
-// happens, so there is no create/update/delete here.
-
-export const activityApi = {
-  list: (params?: {
-    entityType?: string;
-    entityId?: number;
-    action?: string;
-    limit?: number;
-    beforeId?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.entityType) qs.set("entity_type", params.entityType);
-    if (params?.entityId != null) qs.set("entity_id", String(params.entityId));
-    if (params?.action) qs.set("action", params.action);
-    if (params?.limit != null) qs.set("limit", String(params.limit));
-    if (params?.beforeId != null) qs.set("before_id", String(params.beforeId));
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return get<ActivityPage>(`/api/activity/${suffix}`);
-  },
 };
 
 export { ApiError, BASE_URL };

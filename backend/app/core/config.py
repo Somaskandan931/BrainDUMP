@@ -54,7 +54,32 @@ SQL_ECHO = False
 # because it's safe to run with it.
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-insecure-secret-change-me")
 JWT_ALGORITHM = "HS256"
+# Kept for anything (old tests/scripts) that still calls create_access_token()
+# with no explicit expiry. New code should use ACCESS_TOKEN_EXPIRE_MINUTES.
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
+
+# --- Session model: short-lived access token + HttpOnly-cookie refresh token ---
+# Previously a single 7-day JWT was handed to the frontend and kept in
+# localStorage indefinitely -- readable by any script on the page (XSS) and,
+# if it leaked, valid for a week with no way to revoke it. Now the bearer
+# token returned in the response body is short-lived, and a long-lived
+# refresh token is stored server-side (models/refresh_token.py, hashed) and
+# handed to the browser only as an HttpOnly cookie -- see auth/token_service.py
+# and api/v1/auth.py's /refresh, /logout.
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+REFRESH_COOKIE_NAME = "brain_dump_refresh"
+# Scoped to /api/auth so the (still HttpOnly) cookie isn't attached to every
+# other request -- only /refresh and /logout ever need to read it.
+REFRESH_COOKIE_PATH = "/api/auth"
+# Secure=False only makes sense for plain-http local dev; browsers silently
+# drop a Secure cookie set over http. Default on (safe for any real deploy);
+# set COOKIE_SECURE=false in a local .env if you are testing over http.
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").strip().lower() not in ("false", "0", "")
+# "lax" is enough here (the cookie is only ever sent on same-site navigations
+# and same-site/simple cross-site fetches) and, unlike "strict", still
+# attaches after an OAuth redirect back from Google/GitHub.
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # Web application OAuth client id from Google Cloud Console — separate from
 # whatever Web-application client GOOGLE_CALENDAR_CLIENT_ID below uses for
@@ -85,65 +110,6 @@ AUTH_REGISTER_MAX_PER_IP = int(os.getenv("AUTH_REGISTER_MAX_PER_IP", "10"))
 AUTH_REGISTER_WINDOW_SECONDS = int(os.getenv("AUTH_REGISTER_WINDOW_SECONDS", "3600"))  # 1 hour
 
 # ---------------------------------------------------------------------------
-# Email (verification + password reset)
-# ---------------------------------------------------------------------------
-# SMTP is optional. Unset SMTP_HOST => email_service.py logs the message
-# instead of sending it, so registration/reset still work end-to-end on a
-# laptop with zero setup. Set every SMTP_* var for a real deployment.
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-# STARTTLS is the default for port 587; set SMTP_USE_SSL=1 for port 465 (implicit TLS).
-SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "0") == "1"
-EMAIL_FROM_ADDRESS = os.getenv("EMAIL_FROM_ADDRESS", "no-reply@braindump.app")
-EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "BrainDUMP")
-
-# When true, /api/auth/login rejects password-login accounts that haven't
-# clicked their verification link yet (Google/GitHub accounts are always
-# pre-verified — a third party already confirmed the address). Defaults to
-# off so a fresh checkout/local dev/test run keeps working with zero email
-# setup; turn this on once SMTP is actually configured for production.
-EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "0") == "1"
-
-EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES = int(os.getenv("EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES", str(60 * 24)))  # 24h
-PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
-
-# Brute-force limits for the two new public, unauthenticated email-flow
-# endpoints -- same shape as AUTH_REGISTER_MAX_PER_IP above, separate
-# counters so a burst of password-reset requests can't also lock out
-# verification-email resends (or vice versa).
-AUTH_EMAIL_ACTION_MAX_PER_IP = int(os.getenv("AUTH_EMAIL_ACTION_MAX_PER_IP", "10"))
-AUTH_EMAIL_ACTION_WINDOW_SECONDS = int(os.getenv("AUTH_EMAIL_ACTION_WINDOW_SECONDS", "3600"))  # 1 hour
-
-# ---------------------------------------------------------------------------
-# Redis (shared rate-limit state; optional)
-# ---------------------------------------------------------------------------
-# Unset by default: the app runs single-process/single-instance on the
-# in-memory limiter with zero setup (see auth/rate_limit.py). Set REDIS_URL
-# once you run more than one API process/instance -- otherwise each process
-# has its own counters and the real per-account/per-IP limits silently
-# multiply by the instance count. Same value your job queue (future
-# ARQ/Celery worker) would use, e.g. redis://localhost:6379/0.
-REDIS_URL = os.getenv("REDIS_URL", "")
-
-# ---------------------------------------------------------------------------
-# Error monitoring (optional; core/sentry.py)
-# ---------------------------------------------------------------------------
-# Unset by default -- errors just go to stdout via the structured logger
-# (core/logging_config.py). Set SENTRY_DSN (from your Sentry project's
-# Settings -> Client Keys) to also get exception tracking, stack traces,
-# and request context there. ENVIRONMENT tags events so Sentry can
-# separate "production" issues from a developer's local run.
-SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-# Fraction of requests to also capture as performance traces (0.0-1.0).
-# Errors are always captured regardless of this; this only controls
-# trace/APM sampling, which costs Sentry quota. Low default on purpose --
-# raise it temporarily while debugging a specific performance issue.
-SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))
-
-# ---------------------------------------------------------------------------
 # AI / LLM (Milestone 4 — originally local Ollama; swapped to OpenRouter's
 # hosted free tier so inference doesn't depend on a machine staying on and
 # a tunnel running — see backend/ai/ollama_client.py)
@@ -162,10 +128,17 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instru
 AI_DAILY_CALL_LIMIT = int(os.getenv("AI_DAILY_CALL_LIMIT", "50"))
 
 # ---------------------------------------------------------------------------
-# Audit trail (activity_log) retention
+# Observability
 # ---------------------------------------------------------------------------
-# The nightly job deletes each user's activity rows older than this many days
-# (services/workspace/activity_service.purge_older_than). 0 keeps everything.
+# GET /metrics in Prometheus text format (main.py). On by default; disable
+# per-instance if something else scrapes metrics a different way.
+ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").strip().lower() not in ("false", "0", "")
+
+# ---------------------------------------------------------------------------
+# Activity log / audit trail (services/workspace/activity_service.py)
+# ---------------------------------------------------------------------------
+# How long a user's activity_log rows are kept before the nightly job
+# purges them (per user, not a global sweep). 0 keeps everything forever.
 ACTIVITY_LOG_RETENTION_DAYS = int(os.getenv("ACTIVITY_LOG_RETENTION_DAYS", "180"))
 
 # ---------------------------------------------------------------------------
@@ -213,6 +186,16 @@ CALENDAR_SYNC_LOOKBACK_DAYS = 1
 # ---------------------------------------------------------------------------
 # Scheduler / planning engine (Milestone 5)
 # ---------------------------------------------------------------------------
+
+# Run the morning/nightly APScheduler jobs in *this* process. Safe (and
+# the simplest option) for a single instance -- the app's default. Once
+# there is more than one API instance, every one of them would otherwise
+# fire the same cron job at the same time (duplicate morning plans,
+# duplicate replans) -- set this to false on every API instance and run
+# the jobs from one dedicated `python -m backend.worker` process instead
+# (see jobs/scheduler.py, worker.py).
+ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "true").strip().lower() not in ("false", "0", "")
+
 MORNING_JOB_HOUR = 7
 NIGHTLY_JOB_HOUR = 23
 

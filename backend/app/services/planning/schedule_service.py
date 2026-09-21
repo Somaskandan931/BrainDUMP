@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 from backend.app.db.database import owner_id
 from backend.app.models.daily_plan import DailyPlan
 from backend.app.schemas.schedule import BUFFER_MULTIPLIERS
-from backend.app.services.workspace.activity_service import Action, log_activity
 
 
 def _today() -> date:
@@ -65,14 +64,6 @@ def start_day(db: Session, buffer_multiplier: float) -> DailyPlan:
         plan.buffer_multiplier = buffer_multiplier
 
     plan.started_at = datetime.now(timezone.utc)
-    db.flush()  # a brand-new plan needs its id for the audit row
-    log_activity(
-        db,
-        Action.SCHEDULE_DAY_STARTED,
-        entity_type="daily_plan",
-        entity_id=plan.id,
-        details={"plan_date": today, "buffer_multiplier": buffer_multiplier},
-    )
     db.commit()
     db.refresh(plan)
     return plan

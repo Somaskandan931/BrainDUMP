@@ -42,8 +42,9 @@ from backend.app.schemas.calendar import (
     GoogleConnectionStatus,
     GoogleConnectResponse,
 )
+from backend.app.db.database import owner_id
 from backend.app.services.integrations import calendar_sync_service, integration_credentials_service
-from backend.app.services.workspace.activity_service import Action, log_activity
+from backend.app.services.workspace.activity_service import log_activity
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ def google_callback(
             logger.warning("Google Calendar OAuth for user %d returned no refresh_token", user_id)
             return _back("error")
         integration_credentials_service.save_google_credentials_json(db, credentials_json)
-        log_activity(db, Action.CALENDAR_CONNECTED, entity_type="calendar", details={"provider": "google"})
+        log_activity(db, user_id=user_id, action="calendar.connected", entity_type="calendar")
         db.commit()
     except GoogleCalendarError as exc:
         logger.warning("Google Calendar OAuth callback failed for user %d: %s", user_id, exc)
@@ -139,19 +140,11 @@ def google_disconnect(db: Session = Depends(get_scoped_db)) -> None:
     the scheduler for a calendar Brain Dump can no longer see. Sessions
     Brain Dump itself created (source=BRAIN_DUMP) are untouched.
     """
-    was_connected = integration_credentials_service.clear_google_credentials(db)
-    removed_events = (
-        db.query(CalendarEvent)
-        .filter(CalendarEvent.source == EventSource.GOOGLE)
-        .delete(synchronize_session=False)
+    integration_credentials_service.clear_google_credentials(db)
+    db.query(CalendarEvent).filter(CalendarEvent.source == EventSource.GOOGLE).delete(
+        synchronize_session=False
     )
-    if was_connected:  # disconnecting when nothing was connected isn't an event
-        log_activity(
-            db,
-            Action.CALENDAR_DISCONNECTED,
-            entity_type="calendar",
-            details={"provider": "google", "cached_events_removed": removed_events},
-        )
+    log_activity(db, user_id=owner_id(db), action="calendar.disconnected", entity_type="calendar")
     db.commit()
 
 
