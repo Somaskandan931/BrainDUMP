@@ -14,8 +14,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from backend.models.enums import TaskStatus, Importance, EnergyLevel
-from backend.schemas._mixins import utc_iso
+from backend.app.models.enums import TaskStatus, Importance, EnergyLevel
+from backend.app.schemas._mixins import utc_iso
 
 
 # --- Subtask -----------------------------------------------------------

@@ -1,0 +1,570 @@
+"""
+services/scheduler_service.py — Turns prioritized tasks into calendar work sessions.
+
+Milestone 5 responsibilities:
+- Compute free/busy slots from locally-stored CalendarEvents (Google
+  Calendar's *real* API wrapper is Milestone 6 — until then, CalendarEvent
+  rows created here with source=BRAIN_DUMP already double as the local
+  calendar, per models/calendar_event.py's design)
+- Pack tasks into those slots respecting working hours + priority order
+- Resolve conflicts by simply not double-booking: once a slot is consumed
+  it's gone for the rest of this scheduling pass
+
+Every task this module schedules gets a CalendarEvent (the calendar block)
+and a matching WorkSession (the session record ml/estimator.py will later
+train on, once actual_hours gets filled in at completion).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Tuple
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from backend.app.db.database import owner_id
+from backend.app.core import config
+from backend.app.ai import episodic_memory, long_term_memory
+from backend.app.ml import estimator
+from backend.app.ml.priority_model import compute_priority_score, compute_context_switch_cost, energy_fit_at_hour
+from backend.app.models.calendar_event import CalendarEvent
+from backend.app.models.dependency import Dependency
+from backend.app.models.enums import EpisodicEventType, EventSource, SyncStatus, TaskStatus
+from backend.app.models.session import WorkSession
+from backend.app.models.task import Task
+from backend.app.services.workspace import user_settings_service
+
+# Episodic Memory (PRD §63 "Milestones"): a project crossing one of these
+# fractions of its tasks completed is a milestone in its own right,
+# distinct from api/projects.py's PROJECT_COMPLETED (which only fires on
+# the explicit active->completed *status* transition, not on task count).
+# 100% is included even though it usually coincides with that status
+# transition, because task completion and project.status are tracked
+# independently in this schema -- a project can have every task done
+# without anyone flipping its status, and that's still worth recording.
+_MILESTONE_THRESHOLDS_PCT = (25, 50, 75, 100)
+# Below this many total tasks, 25/50/75% jumps are single-task noise
+# (a 2-task project "crosses" 50% and 100% on the same completion) --
+# not a real milestone, just how division works. Mirrors the noise-
+# threshold pattern analytics_service.py already uses elsewhere.
+_MILESTONE_MIN_PROJECT_TASKS = 4
+
+
+@dataclass
+class Slot:
+    start: datetime
+    end: datetime
+
+    @property
+    def minutes(self) -> float:
+        return (self.end - self.start).total_seconds() / 60.0
+
+
+def _active_statuses() -> tuple:
+    return (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
+
+
+def get_busy_intervals(db: Session, start: datetime, end: datetime) -> List[Tuple[datetime, datetime]]:
+    """All CalendarEvents (any source) overlapping [start, end), sorted by start."""
+    events = (
+        db.query(CalendarEvent)
+        .filter(CalendarEvent.end_time > start, CalendarEvent.start_time < end)
+        .order_by(CalendarEvent.start_time)
+        .all()
+    )
+    # SQLite round-trips DateTime(timezone=True) columns as naive datetimes
+    # (no tz info survives the string storage) — every other datetime this
+    # module works with is UTC-aware, so normalize here rather than at
+    # every comparison site downstream.
+    return [(_as_utc(e.start_time), _as_utc(e.end_time)) for e in events]
+
+
+def _as_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def generate_free_slots(
+    db: Session,
+    start: datetime,
+    horizon_days: int = config.SCHEDULING_HORIZON_DAYS,
+) -> List[Slot]:
+    """
+    Free working-hour slots from `start` through `horizon_days` ahead,
+    with existing CalendarEvents carved out. Slots never start in the
+    past relative to `start`.
+
+    Working hours come from Settings (weekday vs. weekend, see
+    user_settings_service.get_working_hours()) with the pre-Settings
+    config.WORK_DAY_START_HOUR/END_HOUR as the fallback default until
+    someone actually saves the Settings page. Lunch stays a fixed system
+    rule (PRD Rule 3, "Protect lunch") regardless of Settings; user-defined
+    Time Blocks (breakfast, class, gym, ...) are carved out on top of it.
+    """
+    end = start + timedelta(days=horizon_days)
+    busy = get_busy_intervals(db, start, end)
+
+    slots: List[Slot] = []
+    current_day = start.date()
+    last_day = end.date()
+
+    while current_day <= last_day:
+        start_hour, end_hour = user_settings_service.get_working_hours(db, current_day)
+
+        day_start = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc).replace(
+            hour=start_hour
+        )
+        day_end = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc).replace(
+            hour=end_hour
+        )
+        day_start = max(day_start, start)
+
+        lunch_start = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc).replace(
+            hour=config.LUNCH_START_HOUR
+        )
+        lunch_end = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc).replace(
+            hour=config.LUNCH_END_HOUR
+        )
+        day_busy = busy + [(lunch_start, lunch_end)]
+
+        midnight = datetime.combine(current_day, datetime.min.time(), tzinfo=timezone.utc)
+        for block_start_min, block_end_min in user_settings_service.get_blocked_ranges_for_day(db, current_day):
+            day_busy.append(
+                (midnight + timedelta(minutes=block_start_min), midnight + timedelta(minutes=block_end_min))
+            )
+
+        if day_start < day_end:
+            slots.extend(_carve_busy(day_start, day_end, day_busy))
+
+        current_day += timedelta(days=1)
+
+    return [s for s in slots if s.minutes >= config.MIN_SLOT_MINUTES]
+
+
+def _carve_busy(
+    window_start: datetime, window_end: datetime, busy: List[Tuple[datetime, datetime]]
+) -> List[Slot]:
+    """Subtract every busy interval overlapping [window_start, window_end) from that window."""
+    relevant = sorted(
+        (b_start, b_end) for b_start, b_end in busy if b_end > window_start and b_start < window_end
+    )
+
+    slots: List[Slot] = []
+    cursor = window_start
+    for b_start, b_end in relevant:
+        b_start = max(b_start, window_start)
+        b_end = min(b_end, window_end)
+        if b_start > cursor:
+            slots.append(Slot(cursor, b_start))
+        cursor = max(cursor, b_end)
+
+    if cursor < window_end:
+        slots.append(Slot(cursor, window_end))
+
+    return slots
+
+
+def pack_tasks_into_schedule(
+    db: Session, tasks: List[Task], slots: List[Slot], energy_pattern: Optional[dict] = None
+) -> List[Tuple[Task, CalendarEvent, WorkSession]]:
+    """
+    Greedily assign each task (already priority-ordered) to the earliest
+    free slot with enough room, consuming that much time from the slot
+    (splitting it if there's leftover). Tasks that don't fit anywhere in
+    `slots` are skipped, not force-scheduled. Does not commit.
+
+    `energy_pattern`, if given, overrides config.DEFAULT_ENERGY_PATTERN
+    for the slot-choice fit scoring below (see long_term_memory.
+    derived_energy_pattern) -- passed through as-is to energy_fit_at_hour.
+    """
+    remaining_slots = [Slot(s.start, s.end) for s in slots]
+    # Cumulative packed minutes since the last break/natural gap, tracked
+    # per remaining_slots entry (Scheduler Rule 4/6: insert a 15-minute
+    # break once a contiguous run of work reaches BREAK_AFTER_MINUTES). A
+    # slot boundary that comes from a real busy interval — a meeting,
+    # lunch — already is a break, so the tally only carries forward
+    # across the *remainder* of a slot we ourselves just consumed from.
+    since_break = [0.0 for _ in remaining_slots]
+    scheduled: List[Tuple[Task, CalendarEvent, WorkSession]] = []
+
+    for task in tasks:
+        hours = task.estimated_hours if task.estimated_hours is not None else config.DEFAULT_TASK_HOURS
+        needed_minutes = max(hours * 60, config.MIN_SLOT_MINUTES)
+
+        candidate_indices = [i for i, slot in enumerate(remaining_slots) if slot.minutes >= needed_minutes]
+        if not candidate_indices:
+            continue  # doesn't fit anywhere in the horizon — left for the next replan
+
+        # Rule 5/6: among slots that fit, prefer the one whose hour-of-day
+        # best matches this task's energy_requirement (deep/HIGH-energy
+        # work into peak hours, shallow/LOW-energy work elsewhere) —
+        # bucketed coarsely so near-ties still fall back to "earliest",
+        # rather than energy-fit alone chasing a slightly-better hour
+        # days out ahead of a good-enough one tomorrow morning.
+        def _sort_key(i: int) -> tuple:
+            slot = remaining_slots[i]
+            fit_bucket = round(energy_fit_at_hour(task, slot.start.hour, energy_pattern), 1)
+            return (-fit_bucket, slot.start)
+
+        chosen_index = min(candidate_indices, key=_sort_key)
+
+        slot = remaining_slots[chosen_index]
+        block_start = slot.start
+        block_end = block_start + timedelta(minutes=needed_minutes)
+
+        event = CalendarEvent(
+            user_id=owner_id(db),
+            task_id=task.id,
+            title=task.title,
+            start_time=block_start,
+            end_time=block_end,
+            source=EventSource.BRAIN_DUMP,
+            sync_status=SyncStatus.NOT_SYNCED,
+            synced=False,
+        )
+        db.add(event)
+        db.flush()  # assigns event.id for the WorkSession FK below
+
+        session = WorkSession(
+            user_id=owner_id(db),
+            task_id=task.id,
+            calendar_event_id=event.id,
+            start_time=block_start,
+            end_time=block_end,
+            predicted_duration_minutes=int(needed_minutes),
+        )
+        db.add(session)
+
+        run_minutes = since_break[chosen_index] + needed_minutes
+        remainder_start = block_end
+        if run_minutes >= config.BREAK_AFTER_MINUTES:
+            remainder_start = block_end + timedelta(minutes=config.BREAK_DURATION_MINUTES)
+            run_minutes = 0.0
+
+        remainder = Slot(remainder_start, slot.end)
+        if remainder.minutes >= config.MIN_SLOT_MINUTES:
+            remaining_slots[chosen_index] = remainder
+            since_break[chosen_index] = run_minutes
+        else:
+            remaining_slots.pop(chosen_index)
+            since_break.pop(chosen_index)
+
+        scheduled.append((task, event, session))
+
+    return scheduled
+
+
+def _tasks_with_unmet_dependencies(db: Session, tasks: List[Task]) -> set:
+    """
+    Task IDs among `tasks` that depend on at least one other task which
+    isn't COMPLETED yet — e.g. "Deployment" depending on "Database"
+    (§61 ERD example). These are held back from this scheduling pass
+    rather than packed alongside/ahead of the work they depend on.
+    """
+    task_ids = [t.id for t in tasks]
+    if not task_ids:
+        return set()
+
+    deps = db.query(Dependency).filter(Dependency.task_id.in_(task_ids)).all()
+    if not deps:
+        return set()
+
+    depended_on_ids = {d.depends_on_task_id for d in deps}
+    completed_ids = {
+        row[0]
+        for row in db.query(Task.id)
+        .filter(Task.id.in_(depended_on_ids), Task.status == TaskStatus.COMPLETED)
+        .all()
+    }
+
+    blocked = set()
+    for d in deps:
+        if d.depends_on_task_id not in completed_ids:
+            blocked.add(d.task_id)
+    return blocked
+
+
+def _score_and_order_tasks(
+    db: Session, tasks: List[Task], now: datetime, energy_pattern: Optional[dict] = None
+) -> List[Task]:
+    """
+    Score every task (ignoring context switching on the first pass, since
+    order isn't known yet), sort descending, then walk the sorted list
+    once more filling in each task's real context_switch_cost against
+    whichever task now precedes it — and folding that into the final
+    stored priority_score.
+
+    `energy_pattern`, if given, overrides config.DEFAULT_ENERGY_PATTERN
+    for every compute_priority_score call below (see long_term_memory.
+    derived_energy_pattern).
+    """
+    for task in tasks:
+        task.priority_score = compute_priority_score(task, now=now, energy_pattern=energy_pattern)
+    tasks.sort(key=lambda t: (t.priority_score or 0.0), reverse=True)
+
+    previous: Optional[Task] = None
+    for task in tasks:
+        switch_cost = compute_context_switch_cost(task, previous)
+        task.context_switch_cost = switch_cost
+        task.priority_score = compute_priority_score(
+            task, now=now, context_switch_cost=switch_cost, energy_pattern=energy_pattern
+        )
+        previous = task
+
+    tasks.sort(key=lambda t: (t.priority_score or 0.0), reverse=True)
+    return tasks
+
+
+def _resolve_energy_pattern(db: Session) -> Optional[dict]:
+    """
+    Shared by schedule_pending_tasks() and get_next_task(): the learned
+    energy pattern from long_term_memory, if there's enough logged
+    history behind it to trust (see derived_energy_pattern's own
+    sample-size guard) -- otherwise None, so callers fall straight
+    through to config.DEFAULT_ENERGY_PATTERN exactly as before this was
+    wired up.
+    """
+    profile = long_term_memory.get_profile(db)
+    if profile is None:
+        return None
+    return long_term_memory.derived_energy_pattern(profile)
+
+
+def _cluster_similar_tasks(tasks: List[Task]) -> List[Task]:
+    """
+    Scheduler Rule 9 (PRD §20 "Group similar work together" -- see the
+    worked example: "Coding, Email, Coding, Reading, Coding" becomes
+    "Coding, Coding, Coding, Email, Reading"). Distinct from Rule 10 /
+    context_switch_cost, which only makes switching *cheaper to score*;
+    this actively reorders near-tied tasks so same-project work actually
+    lands adjacent in the final packing order.
+
+    `tasks` must already be sorted descending by priority_score (as
+    returned by _score_and_order_tasks). Walks it once, in
+    config.CLUSTER_PRIORITY_TOLERANCE-wide priority bands -- within a
+    band, tasks are stable-grouped by project_id (first-seen project
+    first, ties otherwise keeping their relative order) instead of left
+    in whatever order they happened to score in. Never moves a task
+    across a band boundary, so a genuinely higher-priority task from a
+    different project is never pushed back to accommodate clustering.
+    """
+    if not tasks:
+        return tasks
+
+    result: List[Task] = []
+    n = len(tasks)
+    i = 0
+    while i < n:
+        anchor_score = tasks[i].priority_score or 0.0
+        j = i
+        while j < n and abs((tasks[j].priority_score or 0.0) - anchor_score) <= config.CLUSTER_PRIORITY_TOLERANCE:
+            j += 1
+        band = tasks[i:j]
+
+        project_order: List[Optional[int]] = []
+        buckets: dict = {}
+        for t in band:
+            key = t.project_id
+            if key not in buckets:
+                buckets[key] = []
+                project_order.append(key)
+            buckets[key].append(t)
+        for key in project_order:
+            result.extend(buckets[key])
+
+        i = j
+
+    return result
+
+
+def schedule_pending_tasks(
+    db: Session, horizon_days: int = config.SCHEDULING_HORIZON_DAYS
+) -> List[Task]:
+    """
+    Full orchestration: pick up every active task that isn't already
+    scheduled into a future CalendarEvent, estimate/prioritize it, and
+    pack it into free slots over the next `horizon_days`. Commits once.
+    Returns the tasks that were newly scheduled.
+    """
+    now = datetime.now(timezone.utc)
+
+    already_scheduled_task_ids = {
+        row[0]
+        for row in db.query(CalendarEvent.task_id)
+        .filter(CalendarEvent.task_id.isnot(None), CalendarEvent.start_time >= now)
+        .all()
+    }
+
+    candidates = (
+        db.query(Task)
+        .filter(Task.status.in_(_active_statuses()))
+        .filter(~Task.id.in_(already_scheduled_task_ids) if already_scheduled_task_ids else True)
+        .all()
+    )
+    if not candidates:
+        return []
+
+    blocked_ids = _tasks_with_unmet_dependencies(db, candidates)
+    candidates = [t for t in candidates if t.id not in blocked_ids]
+    if not candidates:
+        return []
+
+    for task in candidates:
+        estimator.ensure_estimate(db, task, log=True)
+
+    energy_pattern = _resolve_energy_pattern(db)
+    ordered = _score_and_order_tasks(db, candidates, now, energy_pattern=energy_pattern)
+    ordered = _cluster_similar_tasks(ordered)
+    slots = generate_free_slots(db, now, horizon_days)
+    scheduled = pack_tasks_into_schedule(db, ordered, slots, energy_pattern=energy_pattern)
+
+    db.commit()
+    result = [task for task, _event, _session in scheduled]
+    for task in result:
+        db.refresh(task)
+    return result
+
+
+def complete_task(db: Session, task: Task) -> Task:
+    """
+    Mark `task` complete and close the loop with the ML layer: if the
+    user never set actual_hours by hand, sum the WorkSessions scheduled
+    against this task as a best-effort actual duration, then resolve any
+    pending Prediction so ml/trainer.py (Milestone 8) has real (predicted,
+    actual) pairs to eventually train on. Commits once.
+
+    Milestone 5 moves this out of api/tasks.py per the plan noted there:
+    multi-step operations belong in services/, routes stay thin.
+    """
+    from datetime import datetime, timezone
+
+    from backend.app.ml import estimator
+    from backend.app.models.enums import TaskStatus
+
+    task.status = TaskStatus.COMPLETED
+    task.completed_at = datetime.now(timezone.utc)
+
+    if task.actual_hours is None:
+        total_minutes = sum(s.duration_minutes or 0 for s in task.sessions)
+        if total_minutes > 0:
+            task.actual_hours = round(total_minutes / 60.0, 2)
+
+    estimator.resolve_prediction(db, task)
+
+    db.commit()
+    db.refresh(task)
+
+    _record_milestone_episode(db, task)
+
+    return task
+
+
+def skip_task(db: Session, task: Task) -> Task:
+    """
+    "Not this one right now" — push `task` to the back of today's order
+    without marking it done or touching its calendar schedule. Reuses
+    the same sort_order field the Today list's drag-to-reorder already
+    persists (see api/tasks.py::reorder_tasks) — skip just sets it past
+    every other active task's current sort_order so it sinks to the
+    bottom of that ordering on the next read, instead of introducing a
+    parallel "skipped" concept elsewhere in the schema.
+    """
+    max_sort_order = (
+        db.query(func.max(Task.sort_order))
+        .filter(Task.status.in_(_active_statuses()), Task.id != task.id)
+        .scalar()
+    )
+    task.sort_order = (max_sort_order or 0) + 1
+
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def _record_milestone_episode(db: Session, task: Task) -> None:
+    """
+    Episodic Memory (PRD §63 "Milestones"): fires when completing `task`
+    pushes its project's completed-task ratio across one of
+    _MILESTONE_THRESHOLDS_PCT. Only meaningful for tasks that belong to a
+    project with enough tasks to make a percentage threshold real (see
+    _MILESTONE_MIN_PROJECT_TASKS) -- a standalone task (no project) has no
+    "progress" to be a milestone of.
+
+    record_event()'s (event_type, occurred_on, title) dedup means at most
+    one row per project+threshold ever gets written, updated in place if
+    the same threshold is somehow crossed again (e.g. a task un-completed
+    then re-completed) rather than duplicated.
+    """
+    project = task.project
+    if project is None:
+        return
+
+    total = len(project.tasks)
+    if total < _MILESTONE_MIN_PROJECT_TASKS:
+        return
+
+    completed = sum(1 for t in project.tasks if t.status == TaskStatus.COMPLETED)
+    pct_after = (completed / total) * 100
+    pct_before = ((completed - 1) / total) * 100  # this task's own completion, backed out
+
+    crossed = [p for p in _MILESTONE_THRESHOLDS_PCT if pct_before < p <= pct_after]
+    if not crossed:
+        return
+
+    threshold = max(crossed)  # if one completion jumps two thresholds, record the furthest one reached
+    occurred_on = datetime.now(timezone.utc).date()
+    episodic_memory.record_event(
+        db,
+        EpisodicEventType.MILESTONE,
+        title=f"{project.name}: {threshold}% complete",
+        summary=(
+            f'"{project.name}" reached {threshold}% complete '
+            f"({completed}/{total} tasks) after finishing \"{task.title}\"."
+        ),
+        occurred_on=occurred_on,
+        payload={"project_id": project.id, "threshold_pct": threshold, "tasks_total": total, "tasks_completed": completed},
+    )
+
+
+def get_next_task(db: Session) -> Optional[Task]:
+    """
+    The single 'Do Next' task: highest priority_score among active tasks,
+    scored fresh against right now (not the last time schedule_pending_tasks
+    ran), with context switching computed against whatever the user most
+    recently completed — so the recommendation reflects momentum, not just
+    a stale batch score.
+    """
+    now = datetime.now(timezone.utc)
+
+    candidates = db.query(Task).filter(Task.status.in_(_active_statuses())).all()
+    if not candidates:
+        return None
+
+    last_completed = (
+        db.query(Task)
+        .filter(Task.status == TaskStatus.COMPLETED)
+        .order_by(Task.completed_at.desc())
+        .first()
+    )
+
+    energy_pattern = _resolve_energy_pattern(db)
+    for task in candidates:
+        estimator.ensure_estimate(db, task, log=False)
+        switch_cost = compute_context_switch_cost(task, last_completed)
+        task.context_switch_cost = switch_cost
+        task.priority_score = compute_priority_score(
+            task, now=now, context_switch_cost=switch_cost, energy_pattern=energy_pattern
+        )
+
+    db.commit()
+
+    best = max(
+        candidates,
+        key=lambda t: (
+            t.priority_score or 0.0,
+            -(t.deadline.timestamp() if t.deadline else float("inf")),
+        ),
+    )
+    db.refresh(best)
+    return best

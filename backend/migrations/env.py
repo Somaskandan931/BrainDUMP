@@ -18,9 +18,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from backend import config as app_config
-from backend import models  # noqa: F401  (registers every model on Base.metadata)
-from backend.database import Base
+from backend.app.core import config as app_config
+from backend.app import models  # noqa: F401  (registers every model on Base.metadata)
+from backend.app.db.database import Base
 
 alembic_config = context.config
 

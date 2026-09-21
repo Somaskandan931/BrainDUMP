@@ -21,8 +21,8 @@ os.environ["BRAINDUMP_DATA_DIR"] = str(_TEST_DATA_DIR)
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from backend import config  # noqa: E402
-from backend.database import Base, engine  # noqa: E402
+from backend.app.core import config  # noqa: E402
+from backend.app.db.database import Base, engine  # noqa: E402
 
 
 @pytest.fixture()
@@ -42,7 +42,7 @@ def tmp_path():
 @pytest.fixture(autouse=True)
 def _fresh_db():
     """Empty schema for every test."""
-    from backend import models  # noqa: F401  (registers every table on Base.metadata)
+    from backend.app import models  # noqa: F401  (registers every table on Base.metadata)
 
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
@@ -52,7 +52,7 @@ def _fresh_db():
 @pytest.fixture(autouse=True)
 def _isolated_ml_artifacts(tmp_path, monkeypatch):
     """Keep the trained-estimator pickle (and its in-process cache) out of the real models/ dir."""
-    from backend.ml import estimator, trainer
+    from backend.app.ml import estimator, trainer
 
     models_dir = tmp_path / "models"
     monkeypatch.setattr(config, "MODELS_DIR", models_dir)
@@ -70,9 +70,11 @@ def _no_live_ollama(monkeypatch):
     reference is patched too. Tests that need a model response override these
     with `monkeypatch.setattr(<module>, "call_model_json", fake)`.
     """
-    from backend.ai import ollama_client
-    from backend.scheduler import morning
-    from backend.services import ai_coach_service, analytics_service, planner_service, task_parser
+    from backend.app.ai import ollama_client
+    from backend.app.jobs.tasks import morning_plan as morning
+    from backend.app.services.ai import ai_coach_service
+    from backend.app.services.productivity import analytics_service
+    from backend.app.services.planning import planner_service, task_parser
 
     def _refuse(*args, **kwargs):
         raise ollama_client.OllamaError("Ollama is disabled in tests")
@@ -117,7 +119,7 @@ def db(user):
 def _app_client():
     # Session-scoped: the lifespan starts/stops the APScheduler, which is
     # wasteful to do per test. The schema is reset per test by _fresh_db.
-    from backend.app import app
+    from backend.app.main import app
 
     with TestClient(app) as test_client:
         yield test_client
@@ -149,7 +151,7 @@ def _reset_auth_rate_limits():
     """The limiters are in-process globals keyed on client IP, and every TestClient
     request comes from the same "testclient" host -- without this, failed logins would
     pile up across tests and start returning 429 for unrelated ones."""
-    from backend.api.auth import reset_rate_limits
+    from backend.app.api.v1.auth import reset_rate_limits
 
     reset_rate_limits()
     yield
@@ -160,7 +162,7 @@ def _cheap_password_hashing():
     """bcrypt's default cost (12 rounds, ~0.25s/hash) is the point in production but makes
     the auth tests -- which hash on every register and every unknown-email login -- crawl.
     Hashes made at any cost still verify, so this only speeds up *new* hashes."""
-    from backend.auth import security
+    from backend.app.auth import security
 
     security._pwd_context.update(bcrypt__rounds=4)
     yield

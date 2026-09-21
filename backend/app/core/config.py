@@ -17,7 +17,10 @@ load_dotenv()  # loads ai_os/.env if present; no-op (and no error) otherwise
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent          # ai_os/
+# backend/config.py moves to backend/app/core/config.py as part of the
+# backend/app domain restructure, so this now climbs four levels
+# (core -> app -> backend -> repo root) instead of the original one.
+BASE_DIR = Path(__file__).resolve().parents[3]              # repo root
 # BRAINDUMP_DATA_DIR lets the test suite (tests/conftest.py) point the whole
 # app at a throwaway directory instead of the real data/tasks.db.
 DATA_DIR = Path(os.getenv("BRAINDUMP_DATA_DIR", BASE_DIR / "data"))
@@ -28,10 +31,17 @@ DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# Database (Milestone 2)
+# Database (Milestone 2; Postgres-ready as of the multi-user SaaS pass)
 # ---------------------------------------------------------------------------
+# SQLite remains the local-dev / single-instance default -- zero setup, one
+# file. Set DATABASE_URL (e.g. postgresql+psycopg://user:pass@host/db) for
+# any deployment with more than one API/worker process: SQLite's file lock
+# does not hold up under concurrent writers (API + APScheduler/worker jobs
+# + multiple instances), which is the multi-user failure mode described in
+# ARCHITECTURE.md. No code above the engine cares which one is active.
 DB_PATH = DATA_DIR / "tasks.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
 # Echo raw SQL to stdout — handy during development, noisy in normal use.
 SQL_ECHO = False
@@ -52,6 +62,19 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
 # the frontend (see auth/google_login.py). Empty disables Google login.
 GOOGLE_LOGIN_CLIENT_ID = os.getenv("GOOGLE_LOGIN_CLIENT_ID", "")
 
+# GitHub OAuth app (GitHub -> Settings -> Developer settings -> OAuth
+# Apps -> New OAuth App). Used for "Sign in with GitHub" -- see
+# auth/github_login.py for why this is a code exchange rather than a
+# verified-locally token like Google's. The redirect URI is a *frontend*
+# route (app/auth/github/callback), not a backend one: GitHub redirects
+# the browser there with `code`, and the frontend page is what POSTs
+# that code to our own POST /api/auth/github. Empty disables GitHub login.
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+GITHUB_OAUTH_REDIRECT_URI = os.getenv(
+    "GITHUB_OAUTH_REDIRECT_URI", "http://localhost:3000/auth/github/callback"
+)
+
 # Brute-force limits on /api/auth/* (auth/rate_limit.py; in-memory, per process).
 # Login failures are counted per (client IP, email) and, more loosely, per client
 # IP alone; registrations and Google sign-ins per client IP.
@@ -62,10 +85,22 @@ AUTH_REGISTER_MAX_PER_IP = int(os.getenv("AUTH_REGISTER_MAX_PER_IP", "10"))
 AUTH_REGISTER_WINDOW_SECONDS = int(os.getenv("AUTH_REGISTER_WINDOW_SECONDS", "3600"))  # 1 hour
 
 # ---------------------------------------------------------------------------
-# AI / Ollama (placeholder — filled in Milestone 4)
+# AI / LLM (Milestone 4 — originally local Ollama; swapped to OpenRouter's
+# hosted free tier so inference doesn't depend on a machine staying on and
+# a tunnel running — see backend/ai/ollama_client.py)
 # ---------------------------------------------------------------------------
-OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "qwen3:8b"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+# A ":free"-suffixed model slug. If OpenRouter retires this particular free
+# model, swap it via the OPENROUTER_MODEL env var — no code change needed.
+# Browse current free options at https://openrouter.ai/models?max_price=0
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+
+# Per-user daily cap on AI calls (brain dump, goal breakdown, weekly review
+# recommendation, morning narration, coach fallback replies) -- see
+# services/usage_service.py. 0 disables the check entirely (unlimited) --
+# do not do this with a paid model key.
+AI_DAILY_CALL_LIMIT = int(os.getenv("AI_DAILY_CALL_LIMIT", "50"))
 
 # ---------------------------------------------------------------------------
 # Calendar (Milestone 6; per-user OAuth as of the multi-user auth refactor)

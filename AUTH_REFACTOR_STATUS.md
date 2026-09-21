@@ -78,3 +78,29 @@ imports (including `owner_id` from eight routers that never used it).
   part of the wrapper's API.
 - SQLite on Render's free plan is ephemeral, so accounts and stored Google tokens
   reset on redeploy (see `DEPLOY-FREE.md`).
+
+## Follow-up additions (this session)
+
+- **GitHub added as a third login method**, alongside email/password and
+  Google Sign-In: `models/user.py` (`github_id`/`github_avatar_url`,
+  widened CHECK constraint), `auth/github_login.py` (code exchange +
+  verified-email lookup), migration `0006`, `POST /api/auth/github`
+  (same rate-limiting and no-auto-link account-takeover guard as
+  Google), frontend `GithubButton.tsx` + `/auth/github/callback` +
+  `AppShell.tsx` public-route fix (the callback page would otherwise
+  have been redirected away by the route guard before it could run).
+  `tests/test_auth.py` updated: `/api/auth/github` added to the
+  route-exemption set, plus 3 new tests mirroring the Google ones.
+- **AI backend swapped from local Ollama to OpenRouter's hosted free
+  tier** (`ai/ollama_client.py`, `config.py`) so inference doesn't
+  depend on a machine staying on or a tunnel running. Transport-only
+  change -- `call_model()`/`call_model_json()`/`OllamaError` all kept
+  their exact signatures, so no caller needed to change.
+- **Login/register UI redesigned** to actually use the app's existing
+  "instrument panel" design tokens (`AuthCard.tsx`, `PasswordField.tsx`,
+  restyled `GoogleButton.tsx` to visually match rather than using
+  Google's default button chrome).
+- Not yet done: haven't run the actual test suite against these
+  changes (only `ast.parse` syntax-checked); no GitHub-specific
+  rate-limit-exhaustion test was added (Google's exists); no UI pass
+  beyond login/register.

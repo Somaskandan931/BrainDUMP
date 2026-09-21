@@ -12,17 +12,18 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.schemas.analytics import (
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.schemas.analytics import (
     EstimationErrorResponse,
     EstimationErrorTrendResponse,
     ProductivityHoursResponse,
     StreaksResponse,
     WeeklyReviewResponse,
 )
-from backend.schemas.execution_score import ExecutionScoreResponse, ExecutionScoreTrendResponse
-from backend.schemas.workload import WorkloadResponse
-from backend.services import analytics_service, execution_score_service, workload_service
+from backend.app.schemas.execution_score import ExecutionScoreResponse, ExecutionScoreTrendResponse
+from backend.app.schemas.workload import WorkloadResponse
+from backend.app.services.productivity import analytics_service, execution_score_service
+from backend.app.services.planning import workload_service
 
 router = APIRouter()
 

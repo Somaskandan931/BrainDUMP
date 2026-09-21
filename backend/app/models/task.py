@@ -10,15 +10,15 @@ from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Text, DateTime, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.database import Base
-from backend.models.enums import TaskStatus, Importance, EnergyLevel, sa_enum
-from backend.models.mixins import TimestampMixin
+from backend.app.db.database import Base
+from backend.app.models.enums import TaskStatus, Importance, EnergyLevel, sa_enum
+from backend.app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
-    from backend.models.project import Project
-    from backend.models.session import WorkSession
-    from backend.models.calendar_event import CalendarEvent
-    from backend.models.prediction import Prediction
+    from backend.app.models.project import Project
+    from backend.app.models.session import WorkSession
+    from backend.app.models.calendar_event import CalendarEvent
+    from backend.app.models.prediction import Prediction
 
 
 class Task(Base, TimestampMixin):

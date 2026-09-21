@@ -21,7 +21,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, with_loader_criteria
 
-from backend import config
+from backend.app.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,14 @@ class Base(DeclarativeBase):
     pass
 
 
+# The check_same_thread relaxation is SQLite-only (needed since it is
+# accessed from multiple threads: FastAPI request threads + the
+# APScheduler/worker thread). Postgres has no such flag and does not need
+# one -- passing it there would raise, so it is applied conditionally.
 engine = create_engine(
     config.DATABASE_URL,
     echo=config.SQL_ECHO,
-    # Needed for SQLite when accessed from multiple threads (FastAPI + APScheduler).
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False} if config.IS_SQLITE else {},
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -91,16 +94,17 @@ def get_db():
 def _tenant_models():
     """Lazy import to avoid a circular import (every model imports Base
     from this module) -- same trick init_db() already uses below."""
-    from backend.models.project import Project
-    from backend.models.task import Task, Subtask
-    from backend.models.dependency import Dependency
-    from backend.models.session import WorkSession
-    from backend.models.calendar_event import CalendarEvent
-    from backend.models.prediction import Prediction
-    from backend.models.settings import Setting
-    from backend.models.daily_plan import DailyPlan
-    from backend.models.memory import EpisodicMemory, SemanticMemory
-    from backend.models.metrics import ProductivityMetric
+    from backend.app.models.project import Project
+    from backend.app.models.task import Task, Subtask
+    from backend.app.models.dependency import Dependency
+    from backend.app.models.session import WorkSession
+    from backend.app.models.calendar_event import CalendarEvent
+    from backend.app.models.prediction import Prediction
+    from backend.app.models.settings import Setting
+    from backend.app.models.daily_plan import DailyPlan
+    from backend.app.models.memory import EpisodicMemory, SemanticMemory
+    from backend.app.models.metrics import ProductivityMetric
+    from backend.app.models.usage import UsageRecord
 
     return (
         Project,
@@ -115,6 +119,7 @@ def _tenant_models():
         EpisodicMemory,
         SemanticMemory,
         ProductivityMetric,
+        UsageRecord,
     )
 
 
@@ -197,7 +202,8 @@ def init_db(bind: Engine | None = None) -> None:
     """
     Bring the database's schema up to date. Safe to call every startup.
     """
-    from backend import migrate, models  # noqa: F401  (models registers tables on Base.metadata)
+    from backend.app.db import migrate
+    from backend.app import models  # noqa: F401  (models registers tables on Base.metadata)
 
     bind = bind or engine
     if migrate.is_managed(bind):

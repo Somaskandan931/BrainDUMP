@@ -12,14 +12,14 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.schemas.user_settings import (
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.schemas.user_settings import (
     TimeBlockCreate,
     TimeBlockRead,
     UserSettingsRead,
     UserSettingsUpdate,
 )
-from backend.services import user_settings_service
+from backend.app.services.workspace import user_settings_service
 
 router = APIRouter()
 

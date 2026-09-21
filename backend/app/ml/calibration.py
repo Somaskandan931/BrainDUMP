@@ -35,8 +35,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.models.prediction import Prediction
-from backend.models.task import Task
+from backend.app.models.prediction import Prediction
+from backend.app.models.task import Task
 
 MIN_SAMPLES = 3
 MAX_ADJUSTMENT_PCT = 60.0

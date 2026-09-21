@@ -2,7 +2,6 @@
 .env
 credentials.json
 token.json
-.env.example
 # Python
 __pycache__/
 *.pyc
@@ -10,7 +9,6 @@ venv/
 .venv/
 
 # Local data (SQLite db, logs)
-backend/data/
-backend/logs/
-qqqq
+data/
+logs/
 # Frontend has its own .gitignore (node_modules, .next, .env.local)

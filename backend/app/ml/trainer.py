@@ -10,7 +10,7 @@ plausibly help. Persisted to MODELS_DIR/estimator.pkl via joblib —
 ml/estimator.py loads it lazily and simply doesn't use it (falls back to
 the Milestone 5 median approach) whenever the file is missing, fails to
 load, or there isn't a model yet. Training never runs inline on a request;
-it's triggered weekly (Sundays) from scheduler/nightly.py, since task
+it's triggered weekly (Sundays) from jobs/tasks/nightly_replan.py, since task
 history changes slowly enough that daily retraining buys nothing for a
 single-user install and just costs a table scan + fit every night.
 
@@ -35,10 +35,10 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session, joinedload
 
-from backend import config
-from backend.models.enums import EnergyLevel, Importance
-from backend.models.prediction import Prediction
-from backend.models.task import Task
+from backend.app.core import config
+from backend.app.models.enums import EnergyLevel, Importance
+from backend.app.models.prediction import Prediction
+from backend.app.models.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ def train_estimator(db: Session) -> TrainingResult:
 if __name__ == "__main__":
     # `python -m backend.ml.trainer` — manual retrain for testing, without
     # waiting for Sunday's nightly job.
-    from backend.database import SessionLocal
+    from backend.app.db.database import SessionLocal
 
     session = SessionLocal()
     try:

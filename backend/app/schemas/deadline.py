@@ -14,7 +14,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, field_serializer
 
-from backend.schemas._mixins import utc_iso
+from backend.app.schemas._mixins import utc_iso
 
 BufferLevel = Literal["safe", "default", "aggressive"]
 BufferStatus = Literal["done", "safe", "tight", "impossible"]

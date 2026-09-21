@@ -26,14 +26,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend import config
-from backend.api.deps import get_current_user
-from backend.auth.google_login import verify_google_id_token
-from backend.auth.rate_limit import SlidingWindowLimiter, retry_after_message
-from backend.auth.security import create_access_token, hash_password, verify_password
-from backend.database import get_db
-from backend.models.user import User
-from backend.schemas.auth import (
+from backend.app.core import config
+from backend.app.api.v1.deps import get_current_user
+from backend.app.auth.github_login import exchange_code_for_profile as exchange_github_code
+from backend.app.auth.google_login import verify_google_id_token
+from backend.app.auth.rate_limit import SlidingWindowLimiter, retry_after_message
+from backend.app.auth.security import create_access_token, hash_password, verify_password
+from backend.app.db.database import get_db
+from backend.app.models.user import User
+from backend.app.schemas.auth import (
+    GithubLoginRequest,
     GoogleLoginRequest,
     LoginRequest,
     RegisterRequest,
@@ -48,7 +50,8 @@ _login_account_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_MAX_FAILURES, co
 _login_ip_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
 _register_limiter = SlidingWindowLimiter(config.AUTH_REGISTER_MAX_PER_IP, config.AUTH_REGISTER_WINDOW_SECONDS)
 _google_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
-_ALL_LIMITERS = (_login_account_limiter, _login_ip_limiter, _register_limiter, _google_limiter)
+_github_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
+_ALL_LIMITERS = (_login_account_limiter, _login_ip_limiter, _register_limiter, _google_limiter, _github_limiter)
 
 
 def reset_rate_limits() -> None:
@@ -167,6 +170,41 @@ def google_login(payload: GoogleLoginRequest, request: Request, db: Session = De
             name=profile.name,
             google_sub=profile.sub,
             google_picture_url=profile.picture,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    if not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated")
+
+    return _token_response(user)
+
+
+@router.post("/github", response_model=TokenResponse)
+def github_login(payload: GithubLoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+    ip = _client_ip(request)
+    _enforce(_github_limiter, ip)
+
+    profile = exchange_github_code(payload.code)
+    if profile is None:
+        _github_limiter.hit(ip)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid GitHub authorization code")
+
+    user = db.query(User).filter(User.github_id == profile.sub).first()
+    if user is None:
+        if _user_by_email(db, profile.email) is not None:
+            # Same account-takeover concern as Google above: don't
+            # auto-link onto an existing password account by email match.
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "An account with this email already exists. Sign in with your email and password instead.",
+            )
+        user = User(
+            email=_norm_email(profile.email),
+            name=profile.name,
+            github_id=profile.sub,
+            github_avatar_url=profile.avatar_url,
         )
         db.add(user)
         db.commit()

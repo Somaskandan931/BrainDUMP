@@ -44,7 +44,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
-from backend import config
+from backend.app.core import config
 
 logger = logging.getLogger(__name__)
 

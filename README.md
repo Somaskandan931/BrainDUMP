@@ -4,12 +4,12 @@
 
 **Dump your work. We'll build the plan. You'll finish what matters.**
 
-*A local-first, AI-powered execution operating system for a single user.*
+*An AI-powered execution operating system for a single user.*
 
 [![Status](https://img.shields.io/badge/status-active--development-yellow)](#why-braindump)
 [![Python](https://img.shields.io/badge/backend-FastAPI-009688)](#technology-stack)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js-000000)](#technology-stack)
-[![AI](https://img.shields.io/badge/AI-Ollama%20%2F%20Qwen%203-8A2BE2)](#technology-stack)
+[![AI](https://img.shields.io/badge/AI-OpenRouter-8A2BE2)](#technology-stack)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#license)
 
 </div>
@@ -38,7 +38,7 @@ Planning is the actual bottleneck, not execution. Every day you burn cycles deci
 
 BrainDUMP removes that overhead by continuously evaluating your deadlines, priorities, calendar availability, effort estimates, task dependencies, and historical productivity — and surfacing the single highest-value task at any moment.
 
-Everything runs **locally** through Ollama, so your data never has to leave your machine.
+BrainDUMP's AI runs through [OpenRouter](https://openrouter.ai) (free tier available), so there's no local model to install or keep running.
 
 ## Features
 
@@ -50,7 +50,7 @@ Everything runs **locally** through Ollama, so your data never has to leave your
 - Multi-agent AI pipeline (not a single chatbot)
 - Productivity analytics and weekly review generation
 - Google Calendar integration (optional)
-- Local Ollama inference — offline-first by design
+- OpenRouter-backed AI (free tier available) — no local model to install
 
 ## Technology Stack
 
@@ -58,7 +58,7 @@ Everything runs **locally** through Ollama, so your data never has to leave your
 |---|---|
 | **Frontend** | Next.js, React, Tailwind CSS, shadcn/ui, Recharts |
 | **Backend** | FastAPI, SQLAlchemy, SQLite, APScheduler |
-| **AI** | Ollama, Qwen 3, Sentence Transformers, FAISS |
+| **AI** | OpenRouter, Sentence Transformers (optional semantic search) |
 | **Integrations** | Google Calendar API |
 
 ## Getting Started
@@ -67,7 +67,7 @@ Everything runs **locally** through Ollama, so your data never has to leave your
 
 - Python 3.10+
 - Node.js 18+
-- [Ollama](https://ollama.com) installed and running locally
+- An [OpenRouter](https://openrouter.ai/keys) API key (free tier available)
 
 ### Backend
 
@@ -84,7 +84,7 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
-uvicorn app:app --reload --app-dir ..
+uvicorn backend.app.main:app --reload --app-dir ..
 ```
 
 | Service | URL |
@@ -149,7 +149,7 @@ Per the PRD, BrainDUMP's product philosophy rests on six principles:
 5. **Privacy first.** All AI runs locally by default, all data stays local, internet is optional, and cloud services (like Google Calendar) are integrations, not dependencies.
 6. **Reduce cognitive load.** The product should reduce decisions, not create them — the answer to "what should I work on now?" should always be visible.
 
-Team collaboration, shared workspaces, and multi-tenancy are explicitly out of scope for the MVP — BrainDUMP is built for a single user's personal execution.
+BrainDUMP supports multiple users, each with their own account and isolated data — but it's still designed around one person's personal execution, not team collaboration or shared workspaces.
 
 
 
@@ -157,6 +157,6 @@ Team collaboration, shared workspaces, and multi-tenancy are explicitly out of s
 
 <div align="center">
 
-Not another AI task manager — a local-first operating system that understands your goals, plans your work, and adapts as things change.
+Not another AI task manager — an operating system that understands your goals, plans your work, and adapts as things change.
 
 </div>

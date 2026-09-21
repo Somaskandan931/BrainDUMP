@@ -19,9 +19,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from backend import config
-from backend.models.enums import Importance
-from backend.models.task import Task
+from backend.app.core import config
+from backend.app.models.enums import Importance
+from backend.app.models.task import Task
 
 _IMPORTANCE_SCORE = {
     Importance.LOW: 0.2,

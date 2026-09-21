@@ -1,6 +1,6 @@
 # Brain Dump — start here
 
-This folder is the complete project: backend, frontend, tests and deploy kit, with the
+This folder is the complete project: backend, frontend, tests and deploy config, with the
 multi-user auth refactor finished. `CHANGES.md` lists every file that changed;
 `AUTH_REFACTOR_STATUS.md` explains the bugs that were found and what is still open.
 
@@ -22,11 +22,12 @@ Backend (from this folder):
 ```bash
 pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 echo 'JWT_SECRET_KEY=paste-a-long-random-string-here' >> .env     # required
-uvicorn backend.app:app --reload                                   # http://localhost:8000
+uvicorn backend.app.main:app --reload                               # http://localhost:8000
 ```
 
-The database is created/upgraded automatically on startup. The AI features expect a local
-Ollama (`qwen3:8b`); everything else works without it.
+The database is created/upgraded automatically on startup. The AI features expect an
+`OPENROUTER_API_KEY` in `.env` (free tier available at https://openrouter.ai/keys);
+everything else works without it.
 
 Frontend:
 
@@ -39,7 +40,7 @@ npm run dev                            # http://localhost:3000
 
 Register an account on the login page. Each account only ever sees its own data.
 
-Tests: `python -m pytest` (158 tests).
+Tests: `python -m pytest` (161 tests).
 
 ## Optional settings (`.env`)
 
@@ -53,9 +54,8 @@ Tests: `python -m pytest` (158 tests).
 
 ## Deploying
 
-`deploy-kit/DEPLOY.md` (Render + Netlify with Ollama) or `deploy-kit/DEPLOY-FREE.md`
-(free tier, OpenRouter). Copy the deploy-kit's `backend/` files over `backend/` as those
-docs describe. They are already updated for auth, Google Calendar and rate limiting.
+`DEPLOY.md` (Render + Netlify with Ollama) or `DEPLOY-FREE.md`
+(free tier, OpenRouter) at the repo root.
 
 ## Not verified here
 

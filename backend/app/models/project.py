@@ -14,12 +14,12 @@ from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.database import Base
-from backend.models.enums import ProjectStatus, sa_enum
-from backend.models.mixins import TimestampMixin
+from backend.app.db.database import Base
+from backend.app.models.enums import ProjectStatus, sa_enum
+from backend.app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
-    from backend.models.task import Task
+    from backend.app.models.task import Task
 
 
 class Project(Base, TimestampMixin):

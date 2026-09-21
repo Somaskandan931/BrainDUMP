@@ -16,12 +16,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.ai import episodic_memory, semantic_memory
-from backend.api.deps import get_scoped_db
-from backend.database import owner_id
-from backend.models.project import Project
-from backend.models.enums import EpisodicEventType, ProjectStatus, TaskStatus
-from backend.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead
+from backend.app.ai import episodic_memory, semantic_memory
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.db.database import owner_id
+from backend.app.models.project import Project
+from backend.app.models.enums import EpisodicEventType, ProjectStatus, TaskStatus
+from backend.app.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead
 
 router = APIRouter()
 

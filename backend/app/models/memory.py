@@ -28,12 +28,12 @@ from typing import Optional, TYPE_CHECKING
 from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.database import Base
-from backend.models.enums import EpisodicEventType, SemanticRelationType, sa_enum
-from backend.models.mixins import TimestampMixin
+from backend.app.db.database import Base
+from backend.app.models.enums import EpisodicEventType, SemanticRelationType, sa_enum
+from backend.app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
-    from backend.models.project import Project
+    from backend.app.models.project import Project
 
 
 class EpisodicMemory(Base, TimestampMixin):
