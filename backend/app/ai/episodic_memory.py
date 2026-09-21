@@ -33,9 +33,9 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.database import owner_id
-from backend.models.enums import EpisodicEventType
-from backend.models.memory import EpisodicMemory
+from backend.app.db.database import owner_id
+from backend.app.models.enums import EpisodicEventType
+from backend.app.models.memory import EpisodicMemory
 
 
 def record_event(

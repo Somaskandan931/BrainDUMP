@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from backend.utils.timeutil import ensure_utc
+from backend.app.utils.timeutil import ensure_utc
 
 
 def utc_iso(dt: Optional[datetime]) -> Optional[str]:

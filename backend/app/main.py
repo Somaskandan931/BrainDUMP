@@ -17,9 +17,9 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend import config
-from backend.database import init_db
-from backend.api import (
+from backend.app.core import config
+from backend.app.db.database import init_db
+from backend.app.api.v1 import (
     auth,
     projects,
     tasks,
@@ -33,8 +33,8 @@ from backend.api import (
     settings as settings_api,
     demo,
 )
-from backend.scheduler.morning import run_morning_job
-from backend.scheduler.nightly import run_nightly_job
+from backend.app.jobs.tasks.morning_plan import run_morning_job
+from backend.app.jobs.tasks.nightly_replan import run_nightly_job
 
 _scheduler = BackgroundScheduler()
 

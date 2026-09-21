@@ -5,7 +5,7 @@ import { ReactNode } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { RouteGuard } from "@/components/layout/RouteGuard";
 
-const PUBLIC_PATHS = new Set(["/login", "/register"]);
+const PUBLIC_PATHS = new Set(["/login", "/register", "/auth/github/callback"]);
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();

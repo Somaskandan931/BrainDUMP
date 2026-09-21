@@ -7,13 +7,13 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.auth.security import create_access_token, hash_password
-from backend.database import SessionLocal, owner_id
-from backend.models.enums import Importance, TaskStatus
-from backend.models.prediction import Prediction
-from backend.models.project import Project
-from backend.models.task import Task
-from backend.models.user import User
+from backend.app.auth.security import create_access_token, hash_password
+from backend.app.db.database import SessionLocal, owner_id
+from backend.app.models.enums import Importance, TaskStatus
+from backend.app.models.prediction import Prediction
+from backend.app.models.project import Project
+from backend.app.models.task import Task
+from backend.app.models.user import User
 
 # bcrypt is deliberately slow; hash once per test run instead of once per user.
 TEST_PASSWORD = "correct-horse-battery"

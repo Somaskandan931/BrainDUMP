@@ -30,4 +30,8 @@ ENV BRAINDUMP_DATA_DIR=/data
 EXPOSE 8000
 
 # Render sets $PORT; default 8000 covers local `docker run`.
-CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# --proxy-headers: behind Render's proxy every request would otherwise appear to come
+# from the proxy's IP, collapsing the per-IP login/register rate limits
+# (backend/auth/rate_limit.py) into one shared bucket. The container is only
+# reachable through that proxy, so trusting its forwarded headers is safe here.
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]

@@ -42,11 +42,11 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.database import owner_id
-from backend.models.dependency import Dependency
-from backend.models.enums import SemanticRelationType
-from backend.models.memory import SemanticMemory
-from backend.models.project import Project
+from backend.app.db.database import owner_id
+from backend.app.models.dependency import Dependency
+from backend.app.models.enums import SemanticRelationType
+from backend.app.models.memory import SemanticMemory
+from backend.app.models.project import Project
 
 _RECURRING_WORKFLOW_THRESHOLD = 0.4
 _STOPWORDS = {"the", "a", "an", "and", "or", "for", "of", "to", "in", "on", "with"}

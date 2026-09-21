@@ -16,10 +16,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from backend.ai import episodic_memory, long_term_memory, semantic_memory
-from backend.api.deps import get_scoped_db
-from backend.models.enums import EpisodicEventType, SemanticRelationType
-from backend.schemas.memory import EpisodicMemoryResponse, LongTermProfileResponse, SemanticMemoryResponse
+from backend.app.ai import episodic_memory, long_term_memory, semantic_memory
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.models.enums import EpisodicEventType, SemanticRelationType
+from backend.app.schemas.memory import EpisodicMemoryResponse, LongTermProfileResponse, SemanticMemoryResponse
 
 router = APIRouter()
 

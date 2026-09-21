@@ -95,7 +95,7 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
-uvicorn app:app --reload --app-dir ..
+uvicorn backend.app.main:app --reload --app-dir ..
 ```
 
 Backend

@@ -13,8 +13,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.services import demo_service
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.services.workspace import demo_service
 
 router = APIRouter()
 

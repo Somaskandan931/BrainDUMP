@@ -43,9 +43,13 @@ git push -u origin main
    - `ALLOWED_ORIGINS` = your Netlify URL (fill in after step 4)
    - `OPENROUTER_API_KEY` = the key from step 1 — mark it **Secret** in Render's env var UI
    - `OPENROUTER_MODEL` = `meta-llama/llama-3.1-8b-instruct:free` (or any other `:free` slug from [openrouter.ai/models?max_price=0](https://openrouter.ai/models?max_price=0))
-   - `GOOGLE_CREDENTIALS_PATH` = `/etc/secrets/credentials.json`
+   - `JWT_SECRET_KEY` = a long random string (Render can generate it)
+   - `INTEGRATION_ENCRYPTION_KEY` = a Fernet key (command in `.env.example`) — **Secret**
+   - `FRONTEND_URL` = your Netlify URL
+   - `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` / `GOOGLE_CALENDAR_REDIRECT_URI` = a Google **Web application** OAuth client and its callback, `https://<your-backend>.onrender.com/api/calendar/google/callback` (optional — omit to leave Calendar sync off)
+   - `GOOGLE_LOGIN_CLIENT_ID` = for "Sign in with Google" (optional; also set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` on Netlify)
    - `GOOGLE_CALENDAR_ID` = `primary`
-5. Add your `credentials.json` as a Secret File.
+5. Nothing to upload: each user connects their own Google account from the app.
 6. Deploy. No CLI needed — this is all dashboard clicks.
 
 **RAM note:** if the service crash-loops on boot, `sentence-transformers`/`faiss-cpu` importing at startup is almost certainly why — 512MB is tight. Say the word and I'll make those imports lazy (only load when an endpoint that needs them is actually called) to fit the free tier.
@@ -79,10 +83,10 @@ within it.
 
 Swap SQLite for a free external Postgres that doesn't expire (Render's
 own free Postgres expires after 30 days — Neon and Supabase's free tiers
-don't). Needs a small code change to `DATABASE_URL` in
-`backend/config.py` plus `psycopg2-binary` in `requirements.txt`. Not
-done here since it's a real behavior change, not just deploy config —
-ask if you want it wired up.
+don't). `backend/app/core/config.py` already reads `DATABASE_URL` from
+the environment (falling back to the default SQLite path when unset),
+and `psycopg[binary]` is already in `requirements.txt` — just set
+`DATABASE_URL` to your Postgres connection string as a Render env var.
 
 ## Bottom line
 

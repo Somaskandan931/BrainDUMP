@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models.enums import ProjectStatus
+from backend.app.models.enums import ProjectStatus
 
 
 class ProjectCreate(BaseModel):

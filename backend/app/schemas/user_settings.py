@@ -15,7 +15,7 @@ from typing import List, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend import config
+from backend.app.core import config
 
 TimeBlockCategory = Literal["meal", "class", "gym", "other"]
 

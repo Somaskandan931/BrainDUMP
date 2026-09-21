@@ -47,11 +47,11 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.database import owner_id
-from backend.models.enums import ProjectStatus
-from backend.models.project import Project
-from backend.models.settings import Setting
-from backend.services import analytics_service
+from backend.app.db.database import owner_id
+from backend.app.models.enums import ProjectStatus
+from backend.app.models.project import Project
+from backend.app.models.settings import Setting
+from backend.app.services.productivity import analytics_service
 
 logger = logging.getLogger(__name__)
 

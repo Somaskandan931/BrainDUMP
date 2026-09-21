@@ -552,6 +552,7 @@ export interface AuthUser {
   email: string;
   name?: string | null;
   google_picture_url?: string | null;
+  github_avatar_url?: string | null;
 }
 
 export interface AuthResponse {

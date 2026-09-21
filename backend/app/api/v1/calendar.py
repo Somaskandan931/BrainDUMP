@@ -25,24 +25,24 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from backend import config
-from backend.api.deps import get_current_user, get_scoped_db
-from backend.auth import security
-from backend.database import SessionLocal
-from backend.integrations import google_calendar
-from backend.integrations.google_calendar import GoogleCalendarError, GoogleCalendarNotConfigured
-from backend.models.calendar_event import CalendarEvent
-from backend.models.enums import EventSource
-from backend.models.task import Task
-from backend.models.user import User
-from backend.schemas.calendar import (
+from backend.app.core import config
+from backend.app.api.v1.deps import get_current_user, get_scoped_db
+from backend.app.auth import security
+from backend.app.db.database import SessionLocal
+from backend.app.integrations import google_calendar
+from backend.app.integrations.google_calendar import GoogleCalendarError, GoogleCalendarNotConfigured
+from backend.app.models.calendar_event import CalendarEvent
+from backend.app.models.enums import EventSource
+from backend.app.models.task import Task
+from backend.app.models.user import User
+from backend.app.schemas.calendar import (
     CalendarEventRead,
     CalendarSyncResponse,
     CreateSessionEventRequest,
     GoogleConnectionStatus,
     GoogleConnectResponse,
 )
-from backend.services import calendar_sync_service, integration_credentials_service
+from backend.app.services.integrations import calendar_sync_service, integration_credentials_service
 
 logger = logging.getLogger(__name__)
 

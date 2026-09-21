@@ -15,7 +15,7 @@ from typing import Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-from backend import config
+from backend.app.core import config
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

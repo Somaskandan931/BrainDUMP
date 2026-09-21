@@ -15,9 +15,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.schemas.chat import ChatRequest, ChatResponse
-from backend.services import ai_coach_service
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.schemas.chat import ChatRequest, ChatResponse
+from backend.app.services.ai import ai_coach_service
 
 router = APIRouter()
 

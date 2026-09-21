@@ -5,7 +5,6 @@ sqlalchemy>=2.0,<3.0
 pydantic
 pydantic-settings
 apscheduler
-ollama>=0.6,<0.7
 sentence-transformers
 faiss-cpu
 scikit-learn
@@ -25,3 +24,6 @@ bcrypt==4.0.1
 python-jose[cryptography]
 google-auth
 email-validator
+# Postgres driver -- only used when DATABASE_URL points at postgresql://;
+# harmless to install even when running on the default SQLite.
+psycopg[binary]

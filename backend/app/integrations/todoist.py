@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 import requests
 
-from backend import config
-from backend.models.enums import Importance
+from backend.app.core import config
+from backend.app.models.enums import Importance
 
 logger = logging.getLogger(__name__)
 

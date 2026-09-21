@@ -1,13 +1,15 @@
 """
 models/user.py — SQLAlchemy model for User.
 
-Supports two login methods, either or both:
+Supports three login methods, any combination of:
 - Email + password (hashed_password set, passlib/bcrypt)
 - Google Sign-In (google_sub set, the stable "sub" claim from the
   verified Google ID token — see auth/google_login.py)
+- GitHub OAuth (github_id set, GitHub's numeric account id from the
+  verified access-token exchange — see auth/github_login.py)
 
 The CHECK constraint below guarantees a row can never be created with
-neither method set (would be an unusable, unreachable account).
+none of the three set (would be an unusable, unreachable account).
 """
 
 from __future__ import annotations
@@ -17,15 +19,15 @@ from typing import Optional
 from sqlalchemy import Boolean, CheckConstraint, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.database import Base
-from backend.models.mixins import TimestampMixin
+from backend.app.db.database import Base
+from backend.app.models.mixins import TimestampMixin
 
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(
-            "hashed_password IS NOT NULL OR google_sub IS NOT NULL",
+            "hashed_password IS NOT NULL OR google_sub IS NOT NULL OR github_id IS NOT NULL",
             name="ck_users_has_login_method",
         ),
     )
@@ -34,14 +36,20 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
-    # Null when the account was created via Google only.
+    # Null when the account was created via an OAuth provider only.
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # The Google ID token's stable "sub" claim. Null when the account was
-    # created via email/password only. Unique when present so the same
+    # never signed into with Google. Unique when present so the same
     # Google account can't be linked to two different local accounts.
     google_sub: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     google_picture_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+
+    # GitHub's numeric account id (stable even across a username/email
+    # change, unlike GitHub's login handle) — see auth/github_login.py.
+    # Null when the account was never signed into with GitHub.
+    github_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True)
+    github_avatar_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

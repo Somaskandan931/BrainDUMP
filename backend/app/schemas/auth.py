@@ -22,11 +22,16 @@ class GoogleLoginRequest(BaseModel):
     id_token: str
 
 
+class GithubLoginRequest(BaseModel):
+    code: str
+
+
 class UserOut(BaseModel):
     id: int
     email: str
     name: Optional[str] = None
     google_picture_url: Optional[str] = None
+    github_avatar_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

@@ -13,8 +13,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from backend.schemas.project import ProjectRead
-from backend.schemas.task import TaskRead
+from backend.app.schemas.project import ProjectRead
+from backend.app.schemas.task import TaskRead
 
 
 class BrainDumpRequest(BaseModel):

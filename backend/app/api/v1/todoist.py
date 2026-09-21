@@ -18,11 +18,11 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.database import owner_id
-from backend.integrations.todoist import TodoistError, TodoistNotConfigured
-from backend.models.task import Task
-from backend.schemas.todoist import (
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.db.database import owner_id
+from backend.app.integrations.todoist import TodoistError, TodoistNotConfigured
+from backend.app.models.task import Task
+from backend.app.schemas.todoist import (
     PushTaskRequest,
     PushTaskResponse,
     TodoistConnectRequest,
@@ -30,8 +30,8 @@ from backend.schemas.todoist import (
     TodoistSyncResponse,
     TodoistTaskRead,
 )
-from backend.services import integration_credentials_service, todoist_sync_service
-from backend.integrations import todoist as todoist_client
+from backend.app.services.integrations import integration_credentials_service, todoist_sync_service
+from backend.app.integrations import todoist as todoist_client
 
 router = APIRouter()
 

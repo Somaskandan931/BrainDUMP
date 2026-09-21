@@ -158,6 +158,8 @@ export const authApi = {
     post<AuthResponse>("/api/auth/login", data),
   loginWithGoogle: (idToken: string) =>
     post<AuthResponse>("/api/auth/google", { id_token: idToken }),
+  loginWithGithub: (code: string) =>
+    post<AuthResponse>("/api/auth/github", { code }),
   me: () => get<AuthUser>("/api/auth/me"),
 };
 

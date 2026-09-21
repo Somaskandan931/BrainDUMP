@@ -15,7 +15,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from backend.models.enums import EpisodicEventType, SemanticRelationType
+from backend.app.models.enums import EpisodicEventType, SemanticRelationType
 
 
 class EpisodicEventRead(BaseModel):

@@ -17,6 +17,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithGithub: (code: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -60,13 +61,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
+  const loginWithGithub = useCallback(async (code: string) => {
+    const res = await authApi.loginWithGithub(code);
+    setToken(res.access_token);
+    setUser(res.user);
+  }, []);
+
   const logout = useCallback(() => {
     clearToken();
     setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginWithGoogle, loginWithGithub, logout }}>
       {children}
     </AuthContext.Provider>
   );

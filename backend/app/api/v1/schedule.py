@@ -12,10 +12,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.models.daily_plan import DailyPlan
-from backend.schemas.schedule import DailyPlanRead, StartDayRequest
-from backend.services import schedule_service
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.models.daily_plan import DailyPlan
+from backend.app.schemas.schedule import DailyPlanRead, StartDayRequest
+from backend.app.services.planning import schedule_service
 
 router = APIRouter()
 

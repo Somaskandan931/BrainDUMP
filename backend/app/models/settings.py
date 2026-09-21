@@ -19,8 +19,8 @@ from typing import Optional
 from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.database import Base
-from backend.models.mixins import TimestampMixin
+from backend.app.db.database import Base
+from backend.app.models.mixins import TimestampMixin
 
 
 class Setting(Base, TimestampMixin):

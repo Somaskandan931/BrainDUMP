@@ -15,9 +15,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.schemas.notification import NotificationsResponse
-from backend.services import notification_service
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.schemas.notification import NotificationsResponse
+from backend.app.services.productivity import notification_service
 
 router = APIRouter()
 

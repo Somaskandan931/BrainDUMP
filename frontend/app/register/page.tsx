@@ -2,8 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { Mail, User, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { GoogleButton } from "@/components/auth/GoogleButton";
+import { GithubButton } from "@/components/auth/GithubButton";
+import { AuthCard, AuthDivider, AuthError } from "@/components/auth/AuthCard";
+import { PasswordField } from "@/components/auth/PasswordField";
 import { ApiError } from "@/services/types";
 
 export default function RegisterPage() {
@@ -28,63 +32,69 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-base p-6">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-ink/10 bg-surface p-8 shadow-sm">
-        <div className="space-y-1 text-center">
-          <h1 className="font-display text-xl font-semibold text-ink">Brain Dump</h1>
-          <p className="text-sm text-ink/60">Create your account.</p>
-        </div>
-
+    <AuthCard
+      title="Create your account"
+      subtitle="Dump your thoughts. Let AI handle the rest."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link href="/login" className="font-medium text-ink transition-colors hover:text-primary">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <div className="space-y-2.5">
         <GoogleButton onError={setError} />
+        <GithubButton />
+      </div>
 
-        <div className="flex items-center gap-3 text-xs uppercase text-ink/40">
-          <div className="h-px flex-1 bg-ink/10" />
-          or
-          <div className="h-px flex-1 bg-ink/10" />
-        </div>
+      <AuthDivider />
 
-        <form onSubmit={onSubmit} className="space-y-3">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div className="relative">
+          <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
           <input
             type="text"
             placeholder="Name (optional)"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-ink/15 bg-base px-3 py-2 text-sm outline-none focus:border-ink/40"
+            className="w-full rounded-xl border border-hairline bg-surface-raised py-2.5 pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
+        </div>
+
+        <div className="relative">
+          <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
           <input
             type="email"
             required
-            placeholder="Email"
+            autoComplete="email"
+            placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-ink/15 bg-base px-3 py-2 text-sm outline-none focus:border-ink/40"
+            className="w-full rounded-xl border border-hairline bg-surface-raised py-2.5 pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
-          <input
-            type="password"
-            required
-            minLength={8}
-            placeholder="Password (8+ characters)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-ink/15 bg-base px-3 py-2 text-sm outline-none focus:border-ink/40"
-          />
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-md bg-ink px-3 py-2 text-sm font-medium text-base disabled:opacity-50"
-          >
-            {submitting ? "Creating account…" : "Create account"}
-          </button>
-        </form>
+        </div>
 
-        <p className="text-center text-sm text-ink/60">
-          Already have an account?{" "}
-          <Link href="/login" className="font-medium text-ink underline">
-            Sign in
-          </Link>
-        </p>
-      </div>
-    </div>
+        <PasswordField
+          value={password}
+          onChange={setPassword}
+          placeholder="Password (8+ characters)"
+          minLength={8}
+          autoComplete="new-password"
+        />
+
+        {error && <AuthError message={error} />}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+          {submitting ? "Creating account…" : "Create account"}
+        </button>
+      </form>
+    </AuthCard>
   );
 }

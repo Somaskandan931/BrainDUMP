@@ -39,12 +39,12 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.database import owner_id
-from backend import config
-from backend.ml import calibration
-from backend.models.enums import Importance
-from backend.models.prediction import Prediction
-from backend.models.task import Task
+from backend.app.db.database import owner_id
+from backend.app.core import config
+from backend.app.ml import calibration
+from backend.app.models.enums import Importance
+from backend.app.models.prediction import Prediction
+from backend.app.models.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ _trained_cache_mtime: Optional[float] = None
 def _load_trained_model() -> Optional[dict]:
     global _trained_cache, _trained_cache_mtime
 
-    from backend.ml.trainer import ESTIMATOR_MODEL_PATH
+    from backend.app.ml.trainer import ESTIMATOR_MODEL_PATH
 
     if not ESTIMATOR_MODEL_PATH.exists():
         return None
@@ -102,7 +102,7 @@ def _predict_from_trained_model(task: Task) -> Optional[tuple[float, float]]:
     if bundle is None:
         return None
 
-    from backend.ml.trainer import build_feature_row
+    from backend.app.ml.trainer import build_feature_row
 
     try:
         predicted = float(bundle["model"].predict([build_feature_row(task)])[0])

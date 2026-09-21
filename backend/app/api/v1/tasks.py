@@ -16,12 +16,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_scoped_db
-from backend.database import owner_id
-from backend.models.project import Project
-from backend.models.task import Task, Subtask
-from backend.models.enums import TaskStatus
-from backend.schemas.task import (
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.db.database import owner_id
+from backend.app.models.project import Project
+from backend.app.models.task import Task, Subtask
+from backend.app.models.enums import TaskStatus
+from backend.app.schemas.task import (
     TaskCreate,
     TaskUpdate,
     TaskRead,
@@ -30,9 +30,10 @@ from backend.schemas.task import (
     SubtaskUpdate,
     SubtaskRead,
 )
-from backend.schemas.deadline import TaskDeadlinePlan
-from backend.services import deadline_service, explanation_service
-from backend.services.scheduler_service import (
+from backend.app.schemas.deadline import TaskDeadlinePlan
+from backend.app.services.planning import deadline_service
+from backend.app.services.ai import explanation_service
+from backend.app.services.planning.scheduler_service import (
     complete_task as complete_task_service,
     skip_task as skip_task_service,
 )

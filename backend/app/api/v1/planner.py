@@ -17,9 +17,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.ai.ollama_client import OllamaError
-from backend.api.deps import get_scoped_db
-from backend.schemas.planner import (
+from backend.app.ai.ollama_client import OllamaError
+from backend.app.services.ai.usage_service import AIUsageLimitExceeded
+from backend.app.api.v1.deps import get_scoped_db
+from backend.app.schemas.planner import (
     BrainDumpRequest,
     BrainDumpResponse,
     DailySummaryResponse,
@@ -28,15 +29,15 @@ from backend.schemas.planner import (
     NextTaskResponse,
     ReplanResponse,
 )
-from backend.services.planner_service import (
+from backend.app.services.planning.planner_service import (
     PlannerServiceError,
     generate_from_goal,
     get_daily_summary,
     get_next_task,
     trigger_replan,
 )
-from backend.services import explanation_service
-from backend.services.task_parser import TaskParserError, parse_brain_dump
+from backend.app.services.ai import explanation_service
+from backend.app.services.planning.task_parser import TaskParserError, parse_brain_dump
 
 router = APIRouter()
 
@@ -48,6 +49,10 @@ def submit_brain_dump(payload: BrainDumpRequest, db: Session = Depends(get_scope
         projects, tasks = parse_brain_dump(db, payload.text)
     except TaskParserError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except AIUsageLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+        ) from exc
     except OllamaError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Ollama unavailable: {exc}"
@@ -62,6 +67,10 @@ def submit_goal(payload: GoalRequest, db: Session = Depends(get_scoped_db)) -> G
         project, tasks = generate_from_goal(db, payload.goal_text)
     except PlannerServiceError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except AIUsageLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+        ) from exc
     except OllamaError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Ollama unavailable: {exc}"
