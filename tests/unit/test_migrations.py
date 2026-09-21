@@ -25,8 +25,8 @@ def fresh_engine(tmp_path):
 # A minimal valid user row (email/password login) for tests that insert raw SQL
 # into tenant-owned tables, which all require a user_id now.
 _INSERT_USER = (
-    "INSERT INTO users (id, email, hashed_password, is_active, is_verified, created_at, updated_at) "
-    "VALUES (1, 'u@example.com', 'x', 1, 1, '2026-01-01', '2026-01-01')"
+    "INSERT INTO users (id, email, hashed_password, is_active, created_at, updated_at) "
+    "VALUES (1, 'u@example.com', 'x', 1, '2026-01-01', '2026-01-01')"
 )
 
 

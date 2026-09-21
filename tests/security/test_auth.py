@@ -17,10 +17,12 @@ _PUBLIC_PATHS = {
     "/api/auth/login",
     "/api/auth/google",
     "/api/auth/github",
-    "/api/auth/verify-email/resend",
-    "/api/auth/verify-email/confirm",
-    "/api/auth/password-reset/request",
-    "/api/auth/password-reset/confirm",
+    # Both operate on the HttpOnly refresh cookie, not a bearer token, so
+    # neither depends on get_current_user -- /refresh still 401s anonymously
+    # (no cookie to rotate), but /logout succeeds with no cookie by design
+    # (see api/v1/auth.py's docstring: the frontend can call it unconditionally).
+    "/api/auth/refresh",
+    "/api/auth/logout",
     "/health",
 }
 
@@ -391,122 +393,3 @@ def test_google_sign_in_matches_existing_email_case_insensitively_before_refusin
     make_user("case@example.com")
     _google_profile(monkeypatch, sub="s", email="Case@Example.com")
     assert anon_client.post("/api/auth/google", json={"id_token": "t"}).status_code == 409
-
-
-# ---------------------------------------------------------------------------
-# Email verification / password reset
-# ---------------------------------------------------------------------------
-
-def _capture_emails(monkeypatch):
-    sent = []
-    monkeypatch.setattr(
-        "backend.app.services.email_service.send_email",
-        lambda to, subject, body: sent.append((to, subject, body)) or True,
-    )
-    return sent
-
-
-def _extract_token(body: str) -> str:
-    # Both templates end the link with ?token=<jwt>; the token itself never
-    # contains whitespace, so splitting on "token=" and then whitespace works.
-    return body.split("token=")[1].split()[0]
-
-
-def test_register_sends_a_verification_email_and_user_starts_unverified(anon_client, monkeypatch):
-    sent = _capture_emails(monkeypatch)
-
-    res = anon_client.post("/api/auth/register", json={"email": "fresh@example.com", "password": TEST_PASSWORD})
-
-    assert res.status_code == 201
-    assert res.json()["user"]["is_verified"] is False
-    assert len(sent) == 1
-    assert sent[0][0] == "fresh@example.com"
-    assert "verify" in sent[0][1].lower()
-
-
-def test_verify_email_confirm_activates_the_account(anon_client, monkeypatch):
-    sent = _capture_emails(monkeypatch)
-    anon_client.post("/api/auth/register", json={"email": "toverify@example.com", "password": TEST_PASSWORD})
-    token = _extract_token(sent[0][2])
-
-    res = anon_client.post("/api/auth/verify-email/confirm", json={"token": token})
-    assert res.status_code == 200
-
-    with SessionLocal() as session:
-        user = session.query(User).filter(User.email == "toverify@example.com").first()
-        assert user.is_verified is True
-
-
-def test_verify_email_confirm_rejects_garbage_token(anon_client):
-    res = anon_client.post("/api/auth/verify-email/confirm", json={"token": "not-a-real-token"})
-    assert res.status_code == 400
-
-
-def test_verify_email_confirm_rejects_a_password_reset_token(anon_client, monkeypatch):
-    """Purpose-scoped: a token minted for one flow must not work for the other."""
-    sent = _capture_emails(monkeypatch)
-    make_user("purpose@example.com")
-    anon_client.post("/api/auth/password-reset/request", json={"email": "purpose@example.com"})
-    reset_token = _extract_token(sent[0][2])
-
-    res = anon_client.post("/api/auth/verify-email/confirm", json={"token": reset_token})
-    assert res.status_code == 400
-
-
-def test_google_and_github_accounts_start_verified(anon_client, monkeypatch):
-    _google_profile(monkeypatch)
-    res = anon_client.post("/api/auth/google", json={"id_token": "t"})
-    assert res.json()["user"]["is_verified"] is True
-
-
-def test_password_reset_request_response_is_identical_whether_or_not_the_email_exists(anon_client, monkeypatch):
-    _capture_emails(monkeypatch)
-    make_user("has-account@example.com")
-
-    known = anon_client.post("/api/auth/password-reset/request", json={"email": "has-account@example.com"})
-    unknown = anon_client.post("/api/auth/password-reset/request", json={"email": "nobody@example.com"})
-
-    assert known.status_code == unknown.status_code == 200
-    assert known.json() == unknown.json()
-
-
-def test_password_reset_confirm_changes_the_password_and_verifies_the_account(anon_client, monkeypatch):
-    sent = _capture_emails(monkeypatch)
-    user = make_user("resetme@example.com")
-    anon_client.post("/api/auth/password-reset/request", json={"email": "resetme@example.com"})
-    token = _extract_token(sent[-1][2])
-
-    res = anon_client.post(
-        "/api/auth/password-reset/confirm", json={"token": token, "new_password": "brand-new-password-123"}
-    )
-    assert res.status_code == 200
-
-    old = anon_client.post("/api/auth/login", json={"email": user.email, "password": TEST_PASSWORD})
-    new = anon_client.post("/api/auth/login", json={"email": user.email, "password": "brand-new-password-123"})
-    assert old.status_code == 401
-    assert new.status_code == 200
-
-
-def test_password_reset_confirm_rejects_a_garbage_token(anon_client, monkeypatch):
-    sent = _capture_emails(monkeypatch)
-    make_user("onceonly@example.com")
-    anon_client.post("/api/auth/password-reset/request", json={"email": "onceonly@example.com"})
-    token = _extract_token(sent[-1][2])
-
-    first = anon_client.post("/api/auth/password-reset/confirm", json={"token": token, "new_password": "another-new-pass-1"})
-    assert first.status_code == 200
-
-    garbage = anon_client.post("/api/auth/password-reset/confirm", json={"token": "garbage", "new_password": "another-new-pass-2"})
-    assert garbage.status_code == 400
-
-
-def test_login_is_blocked_for_unverified_accounts_when_verification_is_required(anon_client, monkeypatch):
-    monkeypatch.setattr(config, "EMAIL_VERIFICATION_REQUIRED", True)
-    _capture_emails(monkeypatch)
-
-    res = anon_client.post("/api/auth/register", json={"email": "gated@example.com", "password": TEST_PASSWORD})
-    assert res.status_code == 201  # registering still works and hands back a token
-
-    login = anon_client.post("/api/auth/login", json={"email": "gated@example.com", "password": TEST_PASSWORD})
-    assert login.status_code == 403
-    assert "verify" in login.json()["detail"].lower()

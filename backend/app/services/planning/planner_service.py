@@ -43,7 +43,6 @@ from backend.app.models.project import Project
 from backend.app.models.settings import Setting
 from backend.app.models.task import Task
 from backend.app.services.planning import deadline_service, scheduler_service
-from backend.app.services.workspace.activity_service import ACTOR_AI, Action, log_activity
 
 logger = logging.getLogger(__name__)
 
@@ -145,28 +144,6 @@ def generate_from_goal(db: Session, goal_text: str) -> Tuple[Project, List[Task]
         db.rollback()
         raise PlannerServiceError("The model didn't produce any usable tasks for this goal.")
 
-    # Audit trail, staged before the commit so it persists atomically with
-    # the rows it describes. Tasks need ids first, hence the flush. The
-    # goal text itself is deliberately not copied into the log.
-    db.flush()
-    log_activity(
-        db,
-        Action.GOAL_PLAN_GENERATED,
-        entity_type="project",
-        entity_id=project.id,
-        actor=ACTOR_AI,
-        details={"project_name": project.name, "task_count": len(created_tasks)},
-    )
-    for task in created_tasks:
-        log_activity(
-            db,
-            Action.TASK_CREATED,
-            entity_type="task",
-            entity_id=task.id,
-            actor=ACTOR_AI,
-            details={"title": task.title, "project_id": project.id, "source": "goal"},
-        )
-
     db.commit()
     db.refresh(project)
     for task in created_tasks:
@@ -221,9 +198,9 @@ def get_next_task(db: Session) -> Optional[Task]:
     return scheduler_service.get_next_task(db)
 
 
-def trigger_replan(db: Session, *, actor: str = "user") -> dict:
+def trigger_replan(db: Session) -> dict:
     """Milestone 5: thin wrapper around deadline_service.replan()."""
-    return deadline_service.replan(db, actor=actor)
+    return deadline_service.replan(db)
 
 
 def get_daily_summary(db: Session) -> dict:

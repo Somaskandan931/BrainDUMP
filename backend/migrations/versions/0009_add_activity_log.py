@@ -1,9 +1,8 @@
 """add activity_log table
 
-Backs the per-user audit trail (models/activity.py,
-services/workspace/activity_service.py) and the "why did BrainDUMP move
-this task?" history endpoints. Brand-new table, nothing to backfill --
-history starts from the moment this ships.
+Backs the audit trail / task-history feature (see
+services/workspace/activity_service.py, models/activity.py,
+api/v1/activity.py). Brand-new table, no existing data to backfill.
 
 Revision ID: 0009
 Revises: 0008
@@ -32,20 +31,28 @@ def upgrade() -> None:
         sa.Column(
             "user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
         ),
-        sa.Column("action", sa.String(64), nullable=False),
-        sa.Column("entity_type", sa.String(32), nullable=True),
+        sa.Column("action", sa.String(100), nullable=False),
+        sa.Column("entity_type", sa.String(50), nullable=False),
         sa.Column("entity_id", sa.Integer(), nullable=True),
-        sa.Column("actor", sa.String(16), nullable=False, server_default="user"),
+        sa.Column("actor", sa.String(20), nullable=False, server_default="user"),
         sa.Column("details", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index("ix_activity_log_user_id_id", "activity_log", ["user_id", "id"])
-    op.create_index(
-        "ix_activity_log_user_entity", "activity_log", ["user_id", "entity_type", "entity_id"]
-    )
+    op.create_index("ix_activity_log_user_id", "activity_log", ["user_id"])
+    op.create_index("ix_activity_log_action", "activity_log", ["action"])
+    op.create_index("ix_activity_log_entity_type", "activity_log", ["entity_type"])
+    op.create_index("ix_activity_log_entity_id", "activity_log", ["entity_id"])
+    # The activity feed's dominant query pattern (list_activity in
+    # activity_service.py): a user's rows newest-first, optionally
+    # filtered to one entity or action.
+    op.create_index("ix_activity_log_user_created", "activity_log", ["user_id", "created_at"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_activity_log_user_entity", table_name="activity_log")
-    op.drop_index("ix_activity_log_user_id_id", table_name="activity_log")
+    op.drop_index("ix_activity_log_user_created", table_name="activity_log")
+    op.drop_index("ix_activity_log_entity_id", table_name="activity_log")
+    op.drop_index("ix_activity_log_entity_type", table_name="activity_log")
+    op.drop_index("ix_activity_log_action", table_name="activity_log")
+    op.drop_index("ix_activity_log_user_id", table_name="activity_log")
     op.drop_table("activity_log")

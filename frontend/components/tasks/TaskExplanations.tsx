@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useDeadlineRiskExplanation, useEstimateExplanation } from "@/hooks/useExplain";
 import { ExplainError, ExplainLoading, ReasonList } from "@/components/explain/ReasonList";
+import { TaskHistory } from "@/components/tasks/TaskHistory";
 import { formatHours } from "@/lib/format";
 
 function Disclosure({
@@ -74,7 +75,6 @@ export function TaskExplanations({
   hasDeadline: boolean;
   hasEstimate: boolean;
 }) {
-  if (!hasDeadline && !hasEstimate) return null;
   return (
     <div className="flex flex-col gap-1.5 px-2 pb-3">
       {hasEstimate && (
@@ -83,6 +83,7 @@ export function TaskExplanations({
       {hasDeadline && (
         <Disclosure label="Why is this deadline at risk?">{() => <RiskBody taskId={taskId} />}</Disclosure>
       )}
+      <Disclosure label="History">{() => <TaskHistory taskId={taskId} />}</Disclosure>
     </div>
   );
 }

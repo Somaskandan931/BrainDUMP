@@ -1,11 +1,11 @@
 """
-api/activity.py — read-only view of the caller's own audit trail.
+api/v1/activity.py — GET /api/activity/, the account-wide audit feed.
 
-There is deliberately no write endpoint: activity rows are only ever
-created by the app itself at the moment something happens (see
-services/workspace/activity_service.py), so a client can't forge or edit
-its own history. Per-task history ("why did this move?") lives at
-GET /api/tasks/{id}/history alongside the other task routes.
+Read-only, cursor-paged (on `id`, stable under concurrent inserts unlike
+an offset), and filterable by entity or action. Per-task/project history
+lives on the entity's own router instead (GET /api/tasks/{id}/history in
+api/v1/tasks.py) since that's the natural place a frontend already goes
+to fetch a task.
 """
 
 from __future__ import annotations
@@ -16,29 +16,30 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1.deps import get_scoped_db
-from backend.app.schemas.activity import ActivityPage
+from backend.app.db.database import owner_id
+from backend.app.schemas.activity import ActivityEntryOut, ActivityFeedResponse
 from backend.app.services.workspace import activity_service
 
 router = APIRouter()
 
 
-@router.get("/", response_model=ActivityPage)
+@router.get("/", response_model=ActivityFeedResponse)
 def list_activity(
-    entity_type: Optional[str] = Query(default=None, max_length=32),
-    entity_id: Optional[int] = Query(default=None, ge=1),
-    action: Optional[str] = Query(default=None, max_length=64),
-    limit: int = Query(default=activity_service.DEFAULT_PAGE_SIZE, ge=1, le=activity_service.MAX_PAGE_SIZE),
-    before_id: Optional[int] = Query(default=None, ge=1),
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    action: Optional[str] = None,
+    cursor: Optional[int] = None,
+    limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_scoped_db),
-) -> ActivityPage:
-    """The caller's activity, newest first, optionally narrowed to one
-    entity (entity_type + entity_id) or one action."""
-    rows, next_before_id = activity_service.list_activity(
+) -> ActivityFeedResponse:
+    rows = activity_service.list_activity(
         db,
+        user_id=owner_id(db),
         entity_type=entity_type,
         entity_id=entity_id,
         action=action,
+        cursor=cursor,
         limit=limit,
-        before_id=before_id,
     )
-    return ActivityPage(items=rows, next_before_id=next_before_id)
+    next_cursor = rows[-1].id if len(rows) == limit else None
+    return ActivityFeedResponse(items=[ActivityEntryOut.model_validate(r) for r in rows], next_cursor=next_cursor)

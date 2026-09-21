@@ -16,6 +16,7 @@ from backend.app.models.settings import Setting
 from backend.app.models.memory import EpisodicMemory, SemanticMemory
 from backend.app.models.daily_plan import DailyPlan
 from backend.app.models.usage import UsageRecord
+from backend.app.models.refresh_token import RefreshToken
 from backend.app.models.activity import ActivityLog
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "SemanticMemory",
     "DailyPlan",
     "UsageRecord",
+    "RefreshToken",
     "ActivityLog",
 ]

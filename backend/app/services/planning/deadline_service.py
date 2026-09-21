@@ -26,12 +26,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.core import config
 from backend.app.ai import episodic_memory
+from backend.app.db.database import owner_id
 from backend.app.models.calendar_event import CalendarEvent
 from backend.app.models.enums import EpisodicEventType, Importance, TaskStatus
+from backend.app.services.workspace.activity_service import log_activity
 from backend.app.models.session import WorkSession
 from backend.app.models.task import Task
 from backend.app.services.planning import scheduler_service
-from backend.app.services.workspace.activity_service import ACTOR_USER, Action, log_activity
 
 
 def _active_tasks_with_deadline(db: Session) -> List[Task]:
@@ -102,38 +103,30 @@ def _clear_future_schedule(db: Session, now: datetime) -> None:
     db.flush()
 
 
-def demote_task(
-    db: Session, task: Task, push_days: int = 3, *, actor: str = ACTOR_USER
-) -> Task:
+def demote_task(db: Session, task: Task, push_days: int = 3, actor: str = "user") -> Task:
     """
     Push a low-priority at-risk task's deadline out rather than dropping
     it, so compress_schedule()'s next pass has a real chance of fitting
     it in. Only ever called on LOW/MEDIUM importance tasks — see
     replan()'s selection below.
 
-    Records the move in the audit trail with the actual reason and the
-    before/after dates -- this is the row behind "why did BrainDUMP move
-    my deadline?" (GET /api/tasks/{id}/history). Staged on `db`, not
-    committed: replan() commits right after demoting.
+    Logs task.deadline_pushed with the reason, whether it was already
+    overdue, and the exact before/after dates -- this is the data behind
+    GET /api/tasks/{id}/history's "why did BrainDUMP move this task?".
     """
     if task.deadline is not None:
-        previous = task.deadline
-        task.deadline = previous + timedelta(days=push_days)
-
-        previous_utc = previous if previous.tzinfo is not None else previous.replace(tzinfo=timezone.utc)
+        old_deadline = task.deadline
+        was_overdue = old_deadline < datetime.now(timezone.utc)
+        task.deadline = old_deadline + timedelta(days=push_days)
         log_activity(
-            db,
-            Action.TASK_DEADLINE_CHANGED,
-            entity_type="task",
-            entity_id=task.id,
+            db, user_id=owner_id(db), action="task.deadline_pushed", entity_type="task", entity_id=task.id,
             actor=actor,
             details={
-                "reason": "at_risk_demoted",
-                "importance": task.importance,
-                "was_overdue": previous_utc <= datetime.now(timezone.utc),
+                "reason": "at_risk_demotion",
+                "was_overdue": was_overdue,
                 "push_days": push_days,
-                "from": previous,
-                "to": task.deadline,
+                "old_deadline": old_deadline.isoformat(),
+                "new_deadline": task.deadline.isoformat(),
             },
         )
     return task
@@ -286,10 +279,11 @@ def persist_deadline_plan(db: Session, task: Task, plan: Optional[dict] = None) 
     return task
 
 
-def replan(db: Session, *, actor: str = ACTOR_USER) -> dict:
+def replan(db: Session, actor: str = "user") -> dict:
     """
     Full replan pass, triggered by POST /api/planner/replan (a missed
-    deadline, a slipped day, or just the user asking for a fresh look):
+    deadline, a slipped day, or just the user asking for a fresh look)
+    or by the nightly job (actor="system"):
 
     1. Detect at-risk tasks against the *current* schedule.
     2. Demote LOW/MEDIUM importance at-risk tasks (buy them more runway)
@@ -303,9 +297,12 @@ def replan(db: Session, *, actor: str = ACTOR_USER) -> dict:
     API-facing shape) rather than an ORM object, since this is a summary
     of an action taken, not a single persisted row.
 
-    `actor` says who asked for it ("user" for POST /api/planner/replan,
-    "system" for the nightly job) and is stamped onto the audit rows this
-    pass writes.
+    Each demoted task already gets its own task.deadline_pushed row (see
+    demote_task above); this additionally logs one schedule.replanned
+    row per pass with the ids of everything repacked -- a row per
+    repacked task every night would grow the activity table by O(active
+    tasks) per user per night for no real benefit, since "which slot did
+    this land in" isn't itself a deadline change.
     """
     now = datetime.now(timezone.utc)
 
@@ -322,27 +319,19 @@ def replan(db: Session, *, actor: str = ACTOR_USER) -> dict:
 
     for task in _active_tasks_with_deadline(db):
         persist_deadline_plan(db, task)
+
+    if demoted or rescheduled:
+        log_activity(
+            db, user_id=owner_id(db), action="schedule.replanned", entity_type="schedule", actor=actor,
+            details={
+                "rescheduled_task_ids": [t.id for t in rescheduled],
+                "demoted_task_ids": [t.id for t in demoted],
+                "at_risk_after_count": len(at_risk_after),
+            },
+        )
     db.commit()
 
     _record_replan_episode(db, now=now, demoted=demoted, rescheduled=rescheduled, at_risk_after=at_risk_after)
-
-    # Same "only when the pass actually changed something" rule as the
-    # episodic record above: a quiet nightly run isn't worth a row per user
-    # per night. Own commit -- everything replan() did has already been
-    # committed by this point, so this can't be folded into that transaction.
-    if demoted or rescheduled:
-        log_activity(
-            db,
-            Action.SCHEDULE_REPLANNED,
-            entity_type="schedule",
-            actor=actor,
-            details={
-                "rescheduled_count": len(rescheduled),
-                "demoted_task_ids": [t.id for t in demoted],
-                "at_risk_task_ids": [t.id for t in at_risk_after],
-            },
-        )
-        db.commit()
 
     return {
         "rescheduled_count": len(rescheduled),

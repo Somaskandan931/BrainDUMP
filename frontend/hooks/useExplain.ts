@@ -2,6 +2,7 @@
 
 import useSWR, { useSWRConfig } from "swr";
 import { analyticsApi, plannerApi, tasksApi } from "@/services/api";
+import { ActivityEntry } from "@/services/types";
 import { ApiError } from "@/services/types";
 import { useToast } from "@/components/ui/Toast";
 import { friendlyApiError } from "@/lib/format";
@@ -81,6 +82,22 @@ export function useDeadlineRiskExplanation(taskId: number | null) {
     { shouldRetryOnError: false }
   );
   return { explanation: data ?? null, isLoading, error: error as ApiError | undefined };
+}
+
+/** Full audit trail for one task (activity_service.get_entity_history),
+ * newest first -- same lazy-fetch convention as the other "Why…?" hooks
+ * above, so a collapsed history panel costs nothing until opened. */
+export function useTaskHistory(taskId: number | null) {
+  const { data, error, isLoading } = useSWR(
+    taskId != null ? ["task-history", taskId] : null,
+    () => tasksApi.history(taskId as number),
+    { shouldRetryOnError: false }
+  );
+  return {
+    entries: (data ?? []) as ActivityEntry[],
+    isLoading,
+    error: error as ApiError | undefined,
+  };
 }
 
 /** Per-category bias ml/calibration.py is applying to new estimates right now. */
