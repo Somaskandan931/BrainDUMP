@@ -146,7 +146,7 @@ Per the PRD, BrainDUMP's product philosophy rests on six principles:
 2. **Every task needs a deadline.** Not a due date — a specific completion time, plus a latest safe start, risk score, and completion prediction.
 3. **Plans must adapt.** Completing, delaying, skipping, or adding a task automatically updates the entire schedule.
 4. **Capacity matters.** Scheduling accounts for available hours, meetings, workload, and recovery — not just raw time.
-5. **Privacy first.** All AI runs locally by default, all data stays local, internet is optional, and cloud services (like Google Calendar) are integrations, not dependencies.
+5. **Privacy is a stated goal, not a guarantee yet.** BrainDUMP's data model keeps every user's data isolated to their own account, and cloud services (like Google Calendar) are integrations, not dependencies. AI processing, however, currently runs through a hosted provider (OpenRouter) rather than locally — brain dumps and other AI requests leave your machine. A local-model mode (e.g. via Ollama) is on the roadmap but not wired up in the current deployment; don't rely on "runs locally" until that lands.
 6. **Reduce cognitive load.** The product should reduce decisions, not create them — the answer to "what should I work on now?" should always be visible.
 
 BrainDUMP supports multiple users, each with their own account and isolated data — but it's still designed around one person's personal execution, not team collaboration or shared workspaces.

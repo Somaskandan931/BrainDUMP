@@ -13,11 +13,12 @@ database.get_db directly.
 
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from backend.app.auth.security import decode_access_token
+from backend.app.core.logging_config import set_user_context
 from backend.app.db.database import SessionLocal
 from backend.app.models.user import User
 
@@ -39,6 +40,7 @@ def _unscoped_db():
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     db: Session = Depends(_unscoped_db),
 ) -> User:
@@ -57,6 +59,14 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise _CREDENTIALS_ERROR
+
+    # Best-effort only -- read by core/request_logging.py's middleware so
+    # the structured request log can include which user made the call
+    # without every route having to pass it through explicitly. Never
+    # relied on for auth/tenant decisions (get_scoped_db below still uses
+    # the current_user object directly for that).
+    request.state.user_id = user.id
+    set_user_context(user.id)
 
     return user
 

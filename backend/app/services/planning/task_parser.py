@@ -22,6 +22,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from backend.app.db.database import owner_id
+from backend.app.services.workspace.activity_service import ACTOR_AI, Action, log_activity
 from backend.app.ai.ollama_client import call_model_json
 from backend.app.ai.prompts import TASK_PARSER_SYSTEM, build_task_parser_prompt
 from backend.app.models.enums import Importance, EnergyLevel
@@ -141,6 +142,33 @@ def parse_brain_dump(db: Session, text: str) -> Tuple[List[Project], List[Task]]
     if not created_tasks:
         db.rollback()
         raise TaskParserError("The model didn't find any actionable tasks in that brain dump.")
+
+    # Audit trail, staged before the commit so it persists atomically with
+    # the rows it describes (flush first: new tasks need ids). One summary
+    # row plus one task.created per task, so each task's own history starts
+    # with where it came from. The dump text itself is not copied into the
+    # log -- only counts and ids.
+    db.flush()
+    log_activity(
+        db,
+        Action.BRAIN_DUMP_PROCESSED,
+        entity_type="brain_dump",
+        actor=ACTOR_AI,
+        details={
+            "characters": len(text),
+            "task_ids": [t.id for t in created_tasks],
+            "project_ids": [p.id for p in touched_projects],
+        },
+    )
+    for task in created_tasks:
+        log_activity(
+            db,
+            Action.TASK_CREATED,
+            entity_type="task",
+            entity_id=task.id,
+            actor=ACTOR_AI,
+            details={"title": task.title, "project_id": task.project_id, "source": "brain_dump"},
+        )
 
     db.commit()
     for project in touched_projects:

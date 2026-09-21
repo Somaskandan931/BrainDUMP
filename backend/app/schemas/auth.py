@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     name: Optional[str] = None
     google_picture_url: Optional[str] = None
     github_avatar_url: Optional[str] = None
+    is_verified: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -40,3 +41,24 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=200)

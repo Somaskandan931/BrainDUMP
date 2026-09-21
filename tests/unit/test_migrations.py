@@ -25,8 +25,8 @@ def fresh_engine(tmp_path):
 # A minimal valid user row (email/password login) for tests that insert raw SQL
 # into tenant-owned tables, which all require a user_id now.
 _INSERT_USER = (
-    "INSERT INTO users (id, email, hashed_password, is_active, created_at, updated_at) "
-    "VALUES (1, 'u@example.com', 'x', 1, '2026-01-01', '2026-01-01')"
+    "INSERT INTO users (id, email, hashed_password, is_active, is_verified, created_at, updated_at) "
+    "VALUES (1, 'u@example.com', 'x', 1, 1, '2026-01-01', '2026-01-01')"
 )
 
 
@@ -45,7 +45,7 @@ def test_there_is_exactly_one_head_revision():
     cfg = Config()
     cfg.set_main_option("script_location", str(migrate.MIGRATIONS_DIR))
     assert len(ScriptDirectory.from_config(cfg).get_heads()) == 1
-    assert migrate.head_revision() == "0007"
+    assert migrate.head_revision() == "0009"
 
 
 def test_upgrade_on_an_empty_database_creates_every_model_table(fresh_engine):

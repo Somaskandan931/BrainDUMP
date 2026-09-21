@@ -66,7 +66,8 @@ def get_db():
 # ---------------------------------------------------------------------------
 # Every tenant-owned table (Project, Task, Subtask, Dependency,
 # WorkSession, CalendarEvent, Prediction, Setting, DailyPlan,
-# EpisodicMemory, SemanticMemory, ProductivityMetric) carries a
+# EpisodicMemory, SemanticMemory, ProductivityMetric, UsageRecord,
+# ActivityLog) carries a
 # `user_id` FK. Rather than hand-adding `.filter(Model.user_id ==
 # current_user.id)` to every one of the ~40 query sites scattered
 # across services/, ai/, ml/, and scheduler/ (and trusting every
@@ -105,6 +106,7 @@ def _tenant_models():
     from backend.app.models.memory import EpisodicMemory, SemanticMemory
     from backend.app.models.metrics import ProductivityMetric
     from backend.app.models.usage import UsageRecord
+    from backend.app.models.activity import ActivityLog
 
     return (
         Project,
@@ -120,6 +122,7 @@ def _tenant_models():
         SemanticMemory,
         ProductivityMetric,
         UsageRecord,
+        ActivityLog,
     )
 
 

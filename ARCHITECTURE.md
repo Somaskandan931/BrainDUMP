@@ -112,10 +112,14 @@ ai_os/
   regression/classification trained on the user's own logged data
   (predicted vs. actual hours). They solve different problems and evolve
   independently.
-- **`integrations/` isolated from `services/`** — Google Calendar is
-  the only component that talks to the outside world. Keeping
-  them in one folder makes the "local-first, no data leaves the machine
-  except X" guarantee easy to audit.
+- **`integrations/` isolated from `services/`** — Google Calendar and the
+  AI provider (OpenRouter — see `ai/ollama_client.py`'s module docstring)
+  are the components that talk to the outside world. Keeping the calendar
+  integration in its own folder makes "what talks to a third party"
+  easy to audit; note that unlike Calendar, AI calls are *not* optional
+  in the current deployment (there's no local-model fallback yet), so
+  "no data leaves the machine" is not an accurate description of this
+  build — see README.md's Privacy design principle.
 - **`scheduler/` (APScheduler jobs) vs `services/scheduler_service.py`** —
   the folder holds *when* things run (cron-like jobs); the service holds
   *how* slot-packing works. `morning.py`/`nightly.py` call into

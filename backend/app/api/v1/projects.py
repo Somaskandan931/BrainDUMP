@@ -22,14 +22,26 @@ from backend.app.db.database import owner_id
 from backend.app.models.project import Project
 from backend.app.models.enums import EpisodicEventType, ProjectStatus, TaskStatus
 from backend.app.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead
+from backend.app.services.workspace import activity_service
+from backend.app.services.workspace.activity_service import Action, log_activity
 
 router = APIRouter()
+
+_TRACKED_PROJECT_FIELDS = ("name", "status")
 
 
 @router.post("/", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_scoped_db)) -> Project:
     project = Project(user_id=owner_id(db), **payload.model_dump())
     db.add(project)
+    db.flush()  # assigns project.id so the audit row below can point at it
+    log_activity(
+        db,
+        Action.PROJECT_CREATED,
+        entity_type="project",
+        entity_id=project.id,
+        details={"name": project.name, "source": "manual"},
+    )
     db.commit()
     db.refresh(project)
     return project
@@ -62,8 +74,24 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
 
     was_completed = project.status == ProjectStatus.COMPLETED
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    diff = activity_service.diff_changes(project, changes, _TRACKED_PROJECT_FIELDS)  # before the setattr below
+    for field, value in changes.items():
         setattr(project, field, value)
+
+    # One row per PUT: the active->completed transition is recorded as
+    # project.completed (carrying whatever else changed in the same edit)
+    # rather than as both an "updated" and a "completed".
+    if project.status == ProjectStatus.COMPLETED and not was_completed:
+        log_activity(
+            db,
+            Action.PROJECT_COMPLETED,
+            entity_type="project",
+            entity_id=project.id,
+            details={"name": project.name, **diff},
+        )
+    elif diff:  # a no-op PUT records nothing
+        log_activity(db, Action.PROJECT_UPDATED, entity_type="project", entity_id=project.id, details=diff)
 
     db.commit()
     db.refresh(project)
@@ -102,7 +130,16 @@ def delete_project(project_id: int, db: Session = Depends(get_scoped_db)) -> dic
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Snapshot before the delete: the audit row outlives the project (its
+    # entity_id is deliberately not a foreign key), so it has to carry
+    # enough to still read as "Deleted project 'X' (n tasks)".
+    deleted_details = {"name": project.name, "task_count": len(project.tasks)}
+    deleted_id = project.id
+
     db.delete(project)
+    log_activity(
+        db, Action.PROJECT_DELETED, entity_type="project", entity_id=deleted_id, details=deleted_details
+    )
     db.commit()
 
     return {
