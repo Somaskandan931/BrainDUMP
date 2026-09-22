@@ -69,6 +69,10 @@ def submit_brain_dump(payload: BrainDumpRequest, db: Session = Depends(get_scope
             db, user_id=owner_id(db), action="task.created", entity_type="task", entity_id=task.id,
             actor="ai", details={"title": task.title, "source": "brain_dump"},
         )
+    log_activity(
+        db, user_id=owner_id(db), action="brain_dump.processed", entity_type="brain_dump",
+        actor="ai", details={"task_ids": [task.id for task in tasks], "characters": len(payload.text)},
+    )
     db.commit()
     return BrainDumpResponse(projects=projects, tasks=tasks)
 
@@ -92,6 +96,11 @@ def submit_goal(payload: GoalRequest, db: Session = Depends(get_scoped_db)) -> G
     log_activity(
         db, user_id=owner_id(db), action="project.created", entity_type="project", entity_id=project.id,
         actor="ai", details={"name": project.name, "source": "goal"},
+    )
+    log_activity(
+        db, user_id=owner_id(db), action="goal.plan_generated", entity_type="project",
+        entity_id=project.id, actor="ai",
+        details={"project_name": project.name, "task_count": len(tasks)},
     )
     for task in tasks:
         log_activity(

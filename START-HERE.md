@@ -12,8 +12,8 @@ multi-user auth refactor finished. `CHANGES.md` lists every file that changed;
    "claim legacy data" step that doesn't exist yet.
 2. Your `.env` is not in this package and is left alone.
 3. Delete the old Todoist files if you're copying files over an existing tree instead of
-   replacing the folder: `backend/api/todoist.py`, `backend/integrations/todoist.py`,
-   `backend/schemas/todoist.py`, `backend/services/todoist_sync_service.py`.
+   replacing the folder: `backend/app/api/v1/todoist.py`, `backend/app/integrations/todoist.py`,
+   `backend/app/schemas/todoist.py`, `backend/app/services/integrations/todoist_sync_service.py`.
 
 ## Run it locally
 
@@ -40,7 +40,7 @@ npm run dev                            # http://localhost:3000
 
 Register an account on the login page. Each account only ever sees its own data.
 
-Tests: `python -m pytest` (161 tests).
+Tests: `python -m pytest` (274 tests).
 
 ## Optional settings (`.env`)
 

@@ -220,6 +220,15 @@ export const authApi = {
   // Revokes the refresh session server-side and clears the cookie. Safe to
   // call even with no session (backend no-ops rather than 401ing).
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  confirmEmail: (token: string) =>
+    post<AuthUser>("/api/auth/verify-email/confirm", { token }),
+  requestPasswordReset: (email: string) =>
+    post<{ message: string }>("/api/auth/password-reset/request", { email }),
+  confirmPasswordReset: (token: string, newPassword: string) =>
+    request<void>("/api/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    }),
 };
 
 // --- Projects ---------------------------------------------------------------

@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.core import config
+from backend.app.core.request_logging import RequestLoggingMiddleware
 from backend.app.db.database import init_db
 from backend.app.api.v1 import (
     activity,
@@ -76,6 +77,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Assigns/echoes X-Request-ID and logs one structured line per request
+# (see core/request_logging.py). Was previously defined but never
+# registered, so requests carried no request_id and authenticated calls
+# weren't attributed to a user in the logs.
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(activity.router, prefix="/api/activity", tags=["activity"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

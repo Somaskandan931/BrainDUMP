@@ -43,6 +43,20 @@ def make_user(email: str = "user@example.com", name: str = "Test User") -> User:
         session.close()
 
 
+def mark_verified(email: str) -> None:
+    """Flip is_verified on an already-registered user directly via the DB,
+    bypassing /verify-email/confirm. For tests whose actual point is
+    something downstream of verification (case-insensitive email matching,
+    refresh-cookie rotation, ...) rather than the verification flow itself."""
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter(User.email == email.lower()).one()
+        user.is_verified = True
+        session.commit()
+    finally:
+        session.close()
+
+
 def auth_headers(user: User) -> dict:
     return {"Authorization": f"Bearer {create_access_token(user.id)}"}
 

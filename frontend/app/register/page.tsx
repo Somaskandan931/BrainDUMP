@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Mail, User, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { GoogleButton } from "@/components/auth/GoogleButton";
@@ -12,6 +13,7 @@ import { ApiError } from "@/services/types";
 
 export default function RegisterPage() {
   const { register } = useAuth();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +25,10 @@ export default function RegisterPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await register(email, password, name || undefined);
+      const registered = await register(email, password, name || undefined);
+      if (registered.is_verified === false) {
+        router.replace(`/verify-email?pending=1&email=${encodeURIComponent(email)}`);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {

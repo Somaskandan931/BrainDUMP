@@ -31,6 +31,7 @@ Hardening (see also auth/rate_limit.py):
 from __future__ import annotations
 
 from typing import Optional
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func
@@ -40,12 +41,19 @@ from backend.app.core import config
 from backend.app.api.v1.deps import get_current_user
 from backend.app.auth.github_login import exchange_code_for_profile as exchange_github_code
 from backend.app.auth.google_login import verify_google_id_token
-from backend.app.auth.rate_limit import SlidingWindowLimiter, retry_after_message
-from backend.app.auth.security import create_access_token, hash_password, verify_password
+from backend.app.auth.rate_limit import RedisSlidingWindowLimiter, SlidingWindowLimiter, get_limiter, retry_after_message
+from backend.app.auth.security import (
+    create_access_token,
+    create_action_token,
+    decode_action_token,
+    hash_password,
+    verify_password,
+)
 from backend.app.auth.token_service import (
     issue_refresh_token,
     revoke_refresh_token,
     rotate_refresh_token,
+    revoke_all_for_user,
 )
 from backend.app.db.database import get_db
 from backend.app.models.user import User
@@ -53,21 +61,32 @@ from backend.app.schemas.auth import (
     GithubLoginRequest,
     GoogleLoginRequest,
     LoginRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     RegisterRequest,
     TokenResponse,
     UserOut,
+    VerifyEmailRequest,
 )
+from backend.app.services.email_service import send_password_reset_email, send_verification_email
 from backend.app.services.workspace.activity_service import log_activity
 
 router = APIRouter()
 
-# --- Rate limiting -----------------------------------------------------------
-_login_account_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
-_login_ip_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
-_register_limiter = SlidingWindowLimiter(config.AUTH_REGISTER_MAX_PER_IP, config.AUTH_REGISTER_WINDOW_SECONDS)
-_google_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
-_github_limiter = SlidingWindowLimiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
-_ALL_LIMITERS = (_login_account_limiter, _login_ip_limiter, _register_limiter, _google_limiter, _github_limiter)
+# --- Rate limiting -------------------------------------------------------------
+# get_limiter() picks a Redis-backed limiter (shared across every API instance)
+# when config.REDIS_URL is set and reachable, otherwise the original
+# per-process in-memory limiter -- see auth/rate_limit.py.
+_login_account_limiter = get_limiter(config.AUTH_LOGIN_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
+_login_ip_limiter = get_limiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
+_register_limiter = get_limiter(config.AUTH_REGISTER_MAX_PER_IP, config.AUTH_REGISTER_WINDOW_SECONDS)
+_google_limiter = get_limiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
+_github_limiter = get_limiter(config.AUTH_LOGIN_IP_MAX_FAILURES, config.AUTH_LOGIN_WINDOW_SECONDS)
+_password_reset_limiter = get_limiter(10, 3600)
+_ALL_LIMITERS = (
+    _login_account_limiter, _login_ip_limiter, _register_limiter,
+    _google_limiter, _github_limiter, _password_reset_limiter,
+)
 
 
 def reset_rate_limits() -> None:
@@ -82,7 +101,7 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _enforce(limiter: SlidingWindowLimiter, key: str) -> None:
+def _enforce(limiter: "SlidingWindowLimiter | RedisSlidingWindowLimiter", key: str) -> None:
     wait = limiter.blocked_for(key)
     if wait is not None:
         raise HTTPException(
@@ -159,11 +178,22 @@ def register(
         email=_norm_email(payload.email),
         name=payload.name,
         hashed_password=hash_password(payload.password),
+        is_verified=False,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    log_activity(db, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id)
+    log_activity(
+        db, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id,
+        details={"method": "password"},
+    )
+    db.commit()
+
+    # The session is intentionally issued so the existing response contract
+    # remains stable, but protected routes reject unverified users. The refresh
+    # cookie is therefore not an authentication bypass.
+    token = create_action_token(user.id, "email_verification", config.EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES)
+    send_verification_email(user.email, token)
     return _issue_session(db, response, request, user)
 
 
@@ -184,9 +214,96 @@ def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated")
+    if config.EMAIL_VERIFICATION_REQUIRED and not user.is_verified:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Please verify your email address before signing in")
 
     _login_account_limiter.reset(account_key)
     return _issue_session(db, response, request, user)
+
+
+
+@router.post("/verify-email/confirm", response_model=UserOut)
+def confirm_email_verification(
+    payload: VerifyEmailRequest, db: Session = Depends(get_db)
+) -> UserOut:
+    claims = decode_action_token(payload.token, "email_verification")
+    if claims is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired verification token")
+
+    try:
+        user_id = int(claims["sub"])
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid verification token")
+
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired verification token")
+
+    if not user.is_verified:
+        user.is_verified = True
+        log_activity(
+            db, user_id=user.id, action="auth.email_verified",
+            entity_type="user", entity_id=user.id,
+        )
+        db.commit()
+        db.refresh(user)
+
+    return UserOut.model_validate(user)
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_200_OK)
+def request_password_reset(
+    payload: PasswordResetRequest, request: Request, db: Session = Depends(get_db)
+) -> dict:
+    """Always return the same response so email addresses cannot be enumerated."""
+    ip = _client_ip(request)
+    _enforce(_password_reset_limiter, ip)
+    _password_reset_limiter.hit(ip)
+
+    user = _user_by_email(db, payload.email)
+    if user is not None and user.is_active and user.hashed_password is not None:
+        token = create_action_token(
+            user.id, "password_reset", config.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
+            password_version=hashlib.sha256(user.hashed_password.encode("utf-8")).hexdigest(),
+        )
+        send_password_reset_email(user.email, token)
+
+    return {"message": "If an account exists for that email, a password reset link has been sent."}
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def confirm_password_reset(
+    payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)
+) -> None:
+    claims = decode_action_token(payload.token, "password_reset")
+    if claims is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired password reset token")
+
+    try:
+        user_id = int(claims["sub"])
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid password reset token")
+
+    user = db.get(User, user_id)
+    if user is None or not user.is_active or user.hashed_password is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired password reset token")
+
+    # Bind the reset token to the password hash that existed when the email
+    # was requested. Changing the password therefore makes the same token
+    # unusable even if the reset and replay happen within one clock second.
+    current_password_version = hashlib.sha256(user.hashed_password.encode("utf-8")).hexdigest()
+    if claims.get("password_version") != current_password_version:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired password reset token")
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.is_verified = True
+    log_activity(
+        db, user_id=user.id, action="auth.password_reset",
+        entity_type="user", entity_id=user.id,
+    )
+    db.commit()
+
+    revoke_all_for_user(db, user.id)
 
 
 @router.post("/google", response_model=TokenResponse)
@@ -220,7 +337,7 @@ def google_login(
         db.add(user)
         db.commit()
         db.refresh(user)
-        log_activity(db, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id)
+        log_activity(db, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id, details={"method": "google"})
 
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated")
@@ -258,7 +375,7 @@ def github_login(
         db.add(user)
         db.commit()
         db.refresh(user)
-        log_activity(db, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id)
+        log_activity(db, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id, details={"method": "github"})
 
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated")
@@ -285,12 +402,15 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
     if user is None or not user.is_active:
         _clear_refresh_cookie(response)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh session expired or revoked")
+    if config.EMAIL_VERIFICATION_REQUIRED and not user.is_verified:
+        _clear_refresh_cookie(response)
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Please verify your email address before signing in")
 
     _set_refresh_cookie(response, result.raw_token)
     return TokenResponse(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> None:
     """Revokes the current refresh session (if any) and clears the cookie.
     Always succeeds, including with no cookie at all, so the frontend can

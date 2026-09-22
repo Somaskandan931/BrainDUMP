@@ -76,10 +76,28 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
     diff = diff_changes(before, changes)
     if diff:
         now_completed = project.status == ProjectStatus.COMPLETED and not was_completed
+        audit_changes = {}
+        other_fields = []
+        for field, change in diff.items():
+            if field in {"name", "status"}:
+                old_value, new_value = change["old"], change["new"]
+                if hasattr(old_value, "value"):
+                    old_value = old_value.value
+                if hasattr(new_value, "value"):
+                    new_value = new_value.value
+                audit_changes[field] = {"from": old_value, "to": new_value}
+            else:
+                other_fields.append(field)
+        details = {"changes": audit_changes} if audit_changes else {}
+        if other_fields:
+            details["other_fields"] = other_fields
+
+        # Completing a project is its own semantic action, not a generic
+        # update plus a completion row.
         log_activity(
             db, user_id=owner_id(db),
             action="project.completed" if now_completed else "project.updated",
-            entity_type="project", entity_id=project.id, details={"changes": diff},
+            entity_type="project", entity_id=project.id, details=details,
         )
 
     db.commit()
@@ -119,9 +137,10 @@ def delete_project(project_id: int, db: Session = Depends(get_scoped_db)) -> dic
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    task_count = len(project.tasks)
     log_activity(
         db, user_id=owner_id(db), action="project.deleted", entity_type="project", entity_id=project.id,
-        details={"name": project.name},
+        details={"name": project.name, "task_count": task_count},
     )
     db.delete(project)
     db.commit()

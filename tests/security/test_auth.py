@@ -10,7 +10,7 @@ from backend.app.core import config
 from backend.app.auth import security
 from backend.app.db.database import SessionLocal
 from backend.app.models.user import User
-from tests.helpers import TEST_PASSWORD, auth_headers, make_user
+from tests.helpers import TEST_PASSWORD, auth_headers, make_user, mark_verified
 
 _PUBLIC_PATHS = {
     "/api/auth/register",
@@ -23,6 +23,12 @@ _PUBLIC_PATHS = {
     # (see api/v1/auth.py's docstring: the frontend can call it unconditionally).
     "/api/auth/refresh",
     "/api/auth/logout",
+    # A user proving they own an email address, or recovering a forgotten
+    # password, cannot be expected to already hold a valid access token --
+    # both flows use get_db rather than get_scoped_db by design.
+    "/api/auth/verify-email/confirm",
+    "/api/auth/password-reset/request",
+    "/api/auth/password-reset/confirm",
     "/health",
 }
 
@@ -348,6 +354,11 @@ def test_emails_are_case_insensitive_and_stored_lowercase(anon_client):
     assert anon_client.post(
         "/api/auth/register", json={"email": "MIXED.CASE@example.COM", "password": "a-decent-password"}
     ).status_code == 409
+
+    # The point of this test is case-insensitive matching, not the verification
+    # flow -- verify directly via the DB (login is blocked until verification;
+    # see PRODUCTION_READINESS.md).
+    mark_verified("mixed.case@example.com")
     assert _login(anon_client, "MIXED.case@EXAMPLE.com", "a-decent-password").status_code == 200
 
 

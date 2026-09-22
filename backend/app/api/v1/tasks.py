@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1.deps import get_scoped_db
@@ -40,6 +40,7 @@ from backend.app.services.planning.scheduler_service import (
 )
 from backend.app.services.workspace import activity_service
 from backend.app.services.workspace.activity_service import diff_changes, log_activity
+from backend.app.utils.timeutil import ensure_utc
 
 router = APIRouter()
 
@@ -63,7 +64,7 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_scoped_db)) -> Ta
     db.flush()  # assigns task.id before the log row references it
     log_activity(
         db, user_id=owner_id(db), action="task.created", entity_type="task", entity_id=task.id,
-        details={"title": task.title, "project_id": task.project_id},
+        details={"title": task.title, "project_id": task.project_id, "source": "manual"},
     )
     db.commit()
     db.refresh(task)
@@ -131,9 +132,36 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_sco
 
     diff = diff_changes(before, changes)
     if diff:  # a no-op PUT (every field resubmitted unchanged) logs nothing
+        # Audit only useful metadata. Free-text fields are named but their
+        # contents are deliberately never persisted in the permanent trail.
+        tracked = {}
+        other_fields = []
+        for field, change in diff.items():
+            if field in {"title", "importance", "deadline", "project_id", "status"}:
+                old_value, new_value = change["old"], change["new"]
+                if hasattr(old_value, "value"):
+                    old_value = old_value.value
+                if hasattr(new_value, "value"):
+                    new_value = new_value.value
+                if field == "deadline":
+                    # SQLite hands the pre-update value back naive even though
+                    # everything stored is UTC (same normalization
+                    # deadline_service.demote_task does) -- the new value came
+                    # straight from the request payload and is already
+                    # tz-aware, so only the old one needs it.
+                    old_value = ensure_utc(old_value)
+                    old_value = old_value.isoformat() if old_value is not None else None
+                    new_value = new_value.isoformat() if new_value is not None else None
+                tracked[field] = {"from": old_value, "to": new_value}
+            else:
+                other_fields.append(field)
+
+        details = {"changes": tracked} if tracked else {}
+        if other_fields:
+            details["other_fields"] = other_fields
         log_activity(
             db, user_id=owner_id(db), action="task.updated", entity_type="task", entity_id=task.id,
-            details={"changes": diff},
+            details=details,
         )
 
     db.commit()
@@ -155,8 +183,12 @@ def archive_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    previous_status = task.status.value if hasattr(task.status, "value") else str(task.status)
     task.status = TaskStatus.ARCHIVED
-    log_activity(db, user_id=owner_id(db), action="task.archived", entity_type="task", entity_id=task.id)
+    log_activity(
+        db, user_id=owner_id(db), action="task.archived", entity_type="task", entity_id=task.id,
+        details={"from_status": previous_status},
+    )
     db.commit()
     db.refresh(task)
     return task
@@ -168,7 +200,10 @@ def complete_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     result = complete_task_service(db, task)
-    log_activity(db, user_id=owner_id(db), action="task.completed", entity_type="task", entity_id=task.id)
+    log_activity(
+        db, user_id=owner_id(db), action="task.completed", entity_type="task", entity_id=task.id,
+        details={"title": task.title},
+    )
     db.commit()
     return result
 
@@ -180,20 +215,23 @@ def skip_task(task_id: int, db: Session = Depends(get_scoped_db)) -> Task:
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     result = skip_task_service(db, task)
-    log_activity(db, user_id=owner_id(db), action="task.skipped", entity_type="task", entity_id=task.id)
+    log_activity(
+        db, user_id=owner_id(db), action="task.skipped", entity_type="task", entity_id=task.id,
+        details={"title": task.title},
+    )
     db.commit()
     return result
 
 
 @router.get("/{task_id}/history", response_model=List[ActivityEntryOut])
-def get_task_history(task_id: int, db: Session = Depends(get_scoped_db)) -> list:
+def get_task_history(task_id: int, limit: int = Query(100, ge=1, le=200), db: Session = Depends(get_scoped_db)) -> list:
     """What happened to this task, newest first -- including any deadline
     the planner pushed out and why (see jobs/tasks/nightly_replan.py and
     services/planning/scheduler_service.py's demote_task)."""
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return activity_service.get_entity_history(db, user_id=owner_id(db), entity_type="task", entity_id=task_id)
+    return activity_service.get_entity_history(db, user_id=owner_id(db), entity_type="task", entity_id=task_id, limit=limit)
 
 
 @router.get("/{task_id}/deadline-plan", response_model=TaskDeadlinePlan)

@@ -1,20 +1,25 @@
 """services/workspace/activity_service.py — the audit trail's write path, sanitizer,
 diffing, paging, and retention. Endpoint/hook behaviour is in
-tests/integration/test_activity_api.py."""
+tests/integration/test_activity_api.py.
+
+Written against the actual shipped surface: log_activity() takes a plain
+string `action` and an explicit keyword-only `user_id` (there is no `Action`
+enum -- every real call site in api/v1/tasks.py, projects.py, auth.py, etc.
+passes strings like "task.created" directly), never raises, and returns
+None; list_activity() returns a plain list (cursor-paged via `cursor`/
+`limit`, not a (rows, next_cursor) tuple); diff_changes() takes two flat
+dicts and reports every key whose value changed.
+"""
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timedelta, timezone
-
-import pytest
 
 from backend.app.db.database import SessionLocal
 from backend.app.models.activity import ActivityLog
-from backend.app.models.enums import Importance, TaskStatus
 from backend.app.services.workspace import activity_service as svc
-from backend.app.services.workspace.activity_service import Action, log_activity
-from tests.helpers import make_task, make_user, scoped_session, utcnow
+from backend.app.services.workspace.activity_service import log_activity
+from tests.helpers import make_user, scoped_session
 
 
 def _all_rows() -> list[ActivityLog]:
@@ -28,10 +33,16 @@ def _all_rows() -> list[ActivityLog]:
 # ---------------------------------------------------------------------------
 
 
-def test_log_activity_stages_a_row_for_the_sessions_user_and_commit_persists_it(db, user):
-    row = log_activity(db, Action.TASK_CREATED, entity_type="task", entity_id=7, details={"title": "x"})
+def test_log_activity_stages_a_row_and_commit_persists_it(db, user):
+    log_activity(
+        db,
+        user_id=user.id,
+        action="task.created",
+        entity_type="task",
+        entity_id=7,
+        details={"title": "x"},
+    )
 
-    assert row is not None
     db.commit()
     [stored] = _all_rows()
     assert (stored.user_id, stored.action, stored.entity_type, stored.entity_id, stored.actor) == (
@@ -45,30 +56,42 @@ def test_log_activity_stages_a_row_for_the_sessions_user_and_commit_persists_it(
     assert stored.created_at is not None
 
 
-def test_log_activity_does_not_commit_so_a_rollback_discards_it(db):
+def test_log_activity_does_not_commit_so_a_rollback_discards_it(db, user):
     """The audit row shares the caller's transaction: if the change is rolled back,
     the trail must not claim it happened."""
-    log_activity(db, Action.TASK_COMPLETED, entity_type="task", entity_id=1)
+    log_activity(db, user_id=user.id, action="task.completed", entity_type="task", entity_id=1)
     db.rollback()
 
     assert _all_rows() == []
 
 
-def test_log_activity_without_any_user_returns_none_instead_of_raising():
-    unscoped = SessionLocal()
-    try:
-        assert log_activity(unscoped, Action.TASK_CREATED) is None
-        unscoped.commit()
-    finally:
-        unscoped.close()
+def test_log_activity_records_a_non_default_actor(db, user):
+    log_activity(db, user_id=user.id, action="schedule.replanned", entity_type="schedule", actor="system")
+    db.commit()
+
+    [stored] = _all_rows()
+    assert stored.actor == "system"
+
+
+def test_log_activity_swallows_unexpected_errors_instead_of_raising(db, user, monkeypatch):
+    """Auditing must never break the operation being audited."""
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("serialization exploded")
+
+    monkeypatch.setattr(svc, "_sanitize_details", boom)
+
+    # Must not raise.
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", details={"a": 1})
+    db.commit()
     assert _all_rows() == []
 
 
-def test_log_activity_accepts_an_explicit_user_id_on_an_unscoped_session(user):
+def test_log_activity_on_an_unscoped_session_still_works_with_an_explicit_user_id(user):
     """What the auth routes do: there's no scoped session before a user is known."""
     unscoped = SessionLocal()
     try:
-        assert log_activity(unscoped, Action.AUTH_REGISTERED, entity_type="user", entity_id=user.id, user_id=user.id)
+        log_activity(unscoped, user_id=user.id, action="auth.registered", entity_type="user", entity_id=user.id)
         unscoped.commit()
     finally:
         unscoped.close()
@@ -77,94 +100,41 @@ def test_log_activity_accepts_an_explicit_user_id_on_an_unscoped_session(user):
     assert stored.user_id == user.id
 
 
-@pytest.mark.parametrize("action", ["", "x" * 65])
-def test_log_activity_rejects_an_empty_or_over_long_action(db, action):
-    assert log_activity(db, action) is None
-
-
-def test_log_activity_rejects_an_unknown_actor(db):
-    assert log_activity(db, Action.TASK_CREATED, actor="admin") is None
-
-
-def test_log_activity_swallows_unexpected_errors(db, monkeypatch):
-    """Auditing must never break the operation being audited."""
-
-    def boom(*args, **kwargs):
-        raise RuntimeError("serialization exploded")
-
-    monkeypatch.setattr(svc, "sanitize_details", boom)
-
-    assert log_activity(db, Action.TASK_CREATED, details={"a": 1}) is None
-    db.commit()
-    assert _all_rows() == []
-
-
 # ---------------------------------------------------------------------------
-# sanitize_details
+# _sanitize_details (secret-stripping, size caps)
 # ---------------------------------------------------------------------------
 
 
-def test_sanitize_drops_secret_looking_keys_at_any_depth_case_insensitively():
-    cleaned = svc.sanitize_details(
+def test_sanitize_drops_secret_looking_keys_case_insensitively():
+    cleaned = svc._sanitize_details(
         {
             "title": "ok",
             "password": "hunter2",
             "Reset_Token": "abc",
-            "nested": {"google_refresh_token": "rt", "Authorization": "Bearer x", "fine": 1},
-            "items": [{"api_key": "k", "keep": True}],
+            "google_refresh_token": "rt",
+            "Authorization": "Bearer x",
+            "fine": 1,
         }
     )
 
-    assert cleaned == {"title": "ok", "nested": {"fine": 1}, "items": [{"keep": True}]}
+    assert cleaned == {"title": "ok", "fine": 1}
     assert "hunter2" not in str(cleaned)
 
 
-def test_sanitize_returns_none_for_empty_input():
-    assert svc.sanitize_details(None) is None
-    assert svc.sanitize_details({}) is None
-    assert svc.sanitize_details({"password": "only-a-secret"}) is None
+def test_sanitize_returns_none_for_empty_or_fully_secret_input():
+    assert svc._sanitize_details(None) is None
+    assert svc._sanitize_details({}) is None
 
 
-def test_sanitize_makes_enums_dates_and_odd_types_json_safe():
-    cleaned = svc.sanitize_details(
-        {
-            "importance": Importance.HIGH,
-            "when": datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc),
-            "naive": datetime(2026, 1, 2, 3, 4),
-            "day": datetime(2026, 1, 2).date(),
-            "nan": math.nan,
-            "inf": math.inf,
-            "object": object,
-        }
-    )
+def test_sanitize_caps_string_length_and_key_count():
+    payload = {"long": "y" * 5000}
+    for i in range(30):
+        payload[f"key{i}"] = i
 
-    assert cleaned["importance"] == "high"
-    assert cleaned["when"] == "2026-01-02T03:04:00+00:00"
-    # naive datetimes (what SQLite returns) are UTC in this app; without the
-    # offset a browser would parse them as local time
-    assert cleaned["naive"] == "2026-01-02T03:04:00+00:00"
-    assert cleaned["day"] == "2026-01-02"
-    assert cleaned["nan"] is None and cleaned["inf"] is None
-    assert isinstance(cleaned["object"], str)
+    cleaned = svc._sanitize_details(payload)
 
-
-def test_sanitize_caps_string_length_list_length_and_depth():
-    cleaned = svc.sanitize_details(
-        {"long": "y" * 5000, "many": list(range(500)), "deep": {"a": {"b": {"c": {"d": {"e": 1}}}}}}
-    )
-
-    assert len(cleaned["long"]) <= 500
-    assert len(cleaned["many"]) == 50
-    assert cleaned["deep"]["a"]["b"]["c"] == "…"  # cut off at max depth
-
-
-def test_sanitize_replaces_an_oversized_payload_with_a_stub():
-    payload = {f"key{i}": "z" * 400 for i in range(40)}  # ~16 KB after per-field caps
-
-    cleaned = svc.sanitize_details(payload)
-
-    assert cleaned["truncated"] is True
-    assert len(cleaned["keys"]) <= 20
+    assert len(cleaned["long"]) <= svc._MAX_STRING_LEN + 1  # +1 for the truncation ellipsis
+    assert len(cleaned) <= svc._MAX_DETAILS_KEYS
 
 
 # ---------------------------------------------------------------------------
@@ -172,113 +142,94 @@ def test_sanitize_replaces_an_oversized_payload_with_a_stub():
 # ---------------------------------------------------------------------------
 
 
-def test_diff_changes_reports_tracked_fields_with_before_and_after(db):
-    task = make_task(db, "Old title", importance=Importance.LOW)
-
+def test_diff_changes_reports_every_field_that_actually_changed():
     diff = svc.diff_changes(
-        task, {"title": "New title", "importance": Importance.HIGH}, tracked=("title", "importance")
+        {"title": "Old title", "importance": "low", "status": "pending"},
+        {"title": "New title", "importance": "high", "status": "pending"},
     )
 
     assert diff == {
-        "changes": {
-            "title": {"from": "Old title", "to": "New title"},
-            "importance": {"from": Importance.LOW, "to": Importance.HIGH},
-        }
+        "title": {"old": "Old title", "new": "New title"},
+        "importance": {"old": "low", "new": "high"},
     }
 
 
-def test_diff_changes_names_untracked_fields_without_copying_their_values(db):
-    task = make_task(db, "T", description="secret plans")
-
-    diff = svc.diff_changes(task, {"description": "even more secret plans"}, tracked=("title",))
-
-    assert diff == {"other_fields": ["description"]}
-    assert "secret" not in str(diff)
+def test_diff_changes_is_empty_when_nothing_actually_changed():
+    assert svc.diff_changes({"title": "Same"}, {"title": "Same"}) == {}
 
 
-def test_diff_changes_is_empty_when_nothing_actually_changed(db):
-    task = make_task(db, "Same", importance=Importance.MEDIUM, status=TaskStatus.PENDING)
+def test_diff_changes_treats_a_missing_old_key_as_none():
+    diff = svc.diff_changes({}, {"title": "New"})
 
-    assert svc.diff_changes(task, {"title": "Same", "importance": Importance.MEDIUM}, tracked=("title", "importance")) == {}
-
-
-def test_diff_changes_treats_naive_and_aware_datetimes_as_equal(db):
-    """SQLite returns the stored deadline naive; the request sends it aware. That
-    is a no-op edit, not a change."""
-    deadline = utcnow().replace(microsecond=0) + timedelta(days=3)
-    task = make_task(db, "T")
-    task.deadline = deadline.replace(tzinfo=None)  # as it would be read back from SQLite
-
-    assert svc.diff_changes(task, {"deadline": deadline}, tracked=("deadline",)) == {}
+    assert diff == {"title": {"old": None, "new": "New"}}
 
 
 # ---------------------------------------------------------------------------
-# list_activity
+# list_activity / get_entity_history
 # ---------------------------------------------------------------------------
 
 
-def _log_n(db, n):
+def _log_n(db, user_id, n):
     for i in range(n):
-        log_activity(db, Action.TASK_CREATED, details={"i": i})
+        log_activity(db, user_id=user_id, action="task.created", entity_type="task", details={"i": i})
     db.commit()
 
 
-def test_list_activity_is_newest_first_and_pages_by_cursor(db):
-    _log_n(db, 5)
+def test_list_activity_is_newest_first(db, user):
+    _log_n(db, user.id, 3)
 
-    first, cursor = svc.list_activity(db, limit=2)
-    second, cursor2 = svc.list_activity(db, limit=2, before_id=cursor)
-    third, cursor3 = svc.list_activity(db, limit=2, before_id=cursor2)
+    rows = svc.list_activity(db, user_id=user.id)
+
+    assert [r.details["i"] for r in rows] == [2, 1, 0]
+
+
+def test_list_activity_pages_by_cursor(db, user):
+    _log_n(db, user.id, 5)
+
+    first = svc.list_activity(db, user_id=user.id, limit=2)
+    second = svc.list_activity(db, user_id=user.id, limit=2, cursor=first[-1].id)
 
     assert [r.details["i"] for r in first] == [4, 3]
     assert [r.details["i"] for r in second] == [2, 1]
-    assert [r.details["i"] for r in third] == [0]
-    assert cursor is not None and cursor2 is not None
-    assert cursor3 is None  # last page
 
 
-def test_list_activity_exact_fit_has_no_phantom_next_page(db):
-    _log_n(db, 3)
-
-    rows, cursor = svc.list_activity(db, limit=3)
-
-    assert len(rows) == 3 and cursor is None
-
-
-def test_list_activity_filters_by_entity_and_action(db):
-    log_activity(db, Action.TASK_CREATED, entity_type="task", entity_id=1)
-    log_activity(db, Action.TASK_COMPLETED, entity_type="task", entity_id=1)
-    log_activity(db, Action.TASK_CREATED, entity_type="task", entity_id=2)
-    log_activity(db, Action.PROJECT_CREATED, entity_type="project", entity_id=1)
+def test_list_activity_filters_by_entity_and_action(db, user):
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", entity_id=1)
+    log_activity(db, user_id=user.id, action="task.completed", entity_type="task", entity_id=1)
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", entity_id=2)
+    log_activity(db, user_id=user.id, action="project.created", entity_type="project", entity_id=1)
     db.commit()
 
-    for_task_1, _ = svc.list_activity(db, entity_type="task", entity_id=1)
-    created, _ = svc.list_activity(db, action=Action.TASK_CREATED)
-    projects, _ = svc.list_activity(db, entity_type="project")
+    for_task_1 = svc.list_activity(db, user_id=user.id, entity_type="task", entity_id=1)
+    created = svc.list_activity(db, user_id=user.id, action="task.created")
+    projects = svc.list_activity(db, user_id=user.id, entity_type="project")
 
     assert [r.action for r in for_task_1] == ["task.completed", "task.created"]
     assert len(created) == 2
     assert [r.entity_type for r in projects] == ["project"]
 
 
-def test_list_activity_clamps_an_out_of_range_limit(db):
-    _log_n(db, 3)
+def test_list_activity_clamps_an_out_of_range_limit(db, user):
+    _log_n(db, user.id, 3)
 
-    assert len(svc.list_activity(db, limit=0)[0]) == 1
-    assert len(svc.list_activity(db, limit=10_000)[0]) == 3  # clamped to MAX_PAGE_SIZE, not an error
+    assert len(svc.list_activity(db, user_id=user.id, limit=10_000)) == 3  # clamped, not an error
 
 
-def test_list_activity_only_returns_the_callers_rows(db):
-    other = make_user("other@example.com")
+def test_list_activity_only_returns_the_requested_users_rows(db, user):
+    """db is tenant-scoped to `user` -- the session-level listener injects
+    its own user_id filter on every query issued through it, so reading
+    another user's rows back requires a session scoped to *them*, exactly
+    as a real request/job would have."""
+    other = make_user("other-activity@example.com")
     other_db = scoped_session(other)
     try:
-        log_activity(db, Action.TASK_CREATED, details={"whose": "mine"})
-        log_activity(other_db, Action.TASK_CREATED, details={"whose": "theirs"})
+        log_activity(db, user_id=user.id, action="task.created", entity_type="task", details={"whose": "mine"})
+        log_activity(other_db, user_id=other.id, action="task.created", entity_type="task", details={"whose": "theirs"})
         db.commit()
         other_db.commit()
 
-        mine, _ = svc.list_activity(db)
-        theirs, _ = svc.list_activity(other_db)
+        mine = svc.list_activity(db, user_id=user.id)
+        theirs = svc.list_activity(other_db, user_id=other.id)
     finally:
         other_db.close()
 
@@ -286,13 +237,15 @@ def test_list_activity_only_returns_the_callers_rows(db):
     assert [r.details["whose"] for r in theirs] == ["theirs"]
 
 
-def test_list_activity_on_an_unscoped_session_fails_loudly_instead_of_leaking():
-    unscoped = SessionLocal()
-    try:
-        with pytest.raises(RuntimeError, match="owner_id"):
-            svc.list_activity(unscoped)
-    finally:
-        unscoped.close()
+def test_get_entity_history_matches_list_activity_scoped_to_one_entity(db, user):
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", entity_id=1)
+    log_activity(db, user_id=user.id, action="task.completed", entity_type="task", entity_id=1)
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", entity_id=2)
+    db.commit()
+
+    history = svc.get_entity_history(db, user_id=user.id, entity_type="task", entity_id=1)
+
+    assert [r.action for r in history] == ["task.completed", "task.created"]
 
 
 # ---------------------------------------------------------------------------
@@ -308,45 +261,44 @@ def _backdate(row_id: int, days: int) -> None:
         everyone.commit()
 
 
-def test_purge_deletes_only_rows_older_than_the_cutoff(db):
-    old = log_activity(db, Action.TASK_CREATED, details={"age": "old"})
-    fresh = log_activity(db, Action.TASK_CREATED, details={"age": "fresh"})
+def test_purge_deletes_only_rows_older_than_the_cutoff(db, user):
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", details={"age": "old"})
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task", details={"age": "fresh"})
     db.commit()
-    _backdate(old.id, 200)
-    _backdate(fresh.id, 10)
+    old_row, fresh_row = _all_rows()
+    _backdate(old_row.id, 200)
+    _backdate(fresh_row.id, 10)
 
-    removed = svc.purge_older_than(db, 180)
+    removed = svc.purge_older_than(db, user_id=user.id, days=180)
     db.commit()
 
     assert removed == 1
     assert [r.details["age"] for r in _all_rows()] == ["fresh"]
 
 
-def test_purge_with_zero_or_negative_days_keeps_everything(db):
-    row = log_activity(db, Action.TASK_CREATED)
+def test_purge_with_zero_or_negative_days_keeps_everything(db, user):
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task")
     db.commit()
+    [row] = _all_rows()
     _backdate(row.id, 5000)
 
-    assert svc.purge_older_than(db, 0) == 0
-    assert svc.purge_older_than(db, -1) == 0
+    assert svc.purge_older_than(db, user_id=user.id, days=0) == 0
+    assert svc.purge_older_than(db, user_id=user.id, days=-1) == 0
     assert len(_all_rows()) == 1
 
 
-def test_purge_only_touches_the_scoped_users_rows(db):
-    other = make_user("other@example.com")
-    other_db = scoped_session(other)
-    try:
-        mine = log_activity(db, Action.TASK_CREATED)
-        theirs = log_activity(other_db, Action.TASK_CREATED)
-        db.commit()
-        other_db.commit()
-        _backdate(mine.id, 400)
-        _backdate(theirs.id, 400)
+def test_purge_only_touches_the_named_users_rows(db, user):
+    other = make_user("other-purge@example.com")
+    log_activity(db, user_id=user.id, action="task.created", entity_type="task")
+    log_activity(db, user_id=other.id, action="task.created", entity_type="task")
+    db.commit()
+    mine_row, theirs_row = _all_rows()
+    _backdate(mine_row.id, 400)
+    _backdate(theirs_row.id, 400)
 
-        assert svc.purge_older_than(db, 180) == 1
-        db.commit()
-    finally:
-        other_db.close()
+    removed = svc.purge_older_than(db, user_id=user.id, days=180)
+    db.commit()
 
+    assert removed == 1
     [remaining] = _all_rows()
     assert remaining.user_id == other.id

@@ -15,7 +15,7 @@ const ACTION_LABELS: Record<string, string> = {
   "task.completed": "Completed",
   "task.skipped": "Skipped",
   "task.archived": "Archived",
-  "task.deadline_pushed": "Deadline pushed back",
+  "task.deadline_changed": "Deadline changed",
   "schedule.replanned": "Rescheduled",
 };
 
@@ -23,8 +23,8 @@ function actionLabel(entry: ActivityEntry): string {
   return ACTION_LABELS[entry.action] ?? entry.action;
 }
 
-// details is a free-form JSON blob (diffed old/new values, or a reason
-// string for a deadline push) -- render it plainly rather than assuming a
+// details is a free-form JSON blob (diffed from/to values, or a reason
+// string for a deadline change) -- render it plainly rather than assuming a
 // shape, since different actions populate it differently.
 function detailSummary(entry: ActivityEntry): string | null {
   if (!entry.details || Object.keys(entry.details).length === 0) return null;

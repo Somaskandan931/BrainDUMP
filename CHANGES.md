@@ -3,6 +3,9 @@
 Relative to `brain-dump-project.zip`: **10 added (including this file and `START-HERE.md`), 61 modified, 4 deleted.**
 Backend suite: 158 tests passing. Frontend: `tsc --noEmit` and `next lint` clean.
 See `AUTH_REFACTOR_STATUS.md` for the bugs found and the known follow-ups.
+*(This file is a snapshot from that pass — the suite has grown well past 158
+since; see `PRODUCTION_READINESS.md` for the current total and for the bugs
+found in later passes.)*
 
 ## Deleted (dead code)
 The Todoist sync layer. It referenced `Task.todoist_id`, which migration `0002` dropped on purpose, so

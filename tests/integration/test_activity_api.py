@@ -514,8 +514,8 @@ def test_activity_rows_are_hidden_from_a_scoped_session_by_the_tenant_listener(u
     with SessionLocal() as everyone:
         everyone.add_all(
             [
-                ActivityLog(user_id=user.id, action="task.created", actor="user"),
-                ActivityLog(user_id=other_user.id, action="task.created", actor="user"),
+                ActivityLog(user_id=user.id, action="task.created", entity_type="task", actor="user"),
+                ActivityLog(user_id=other_user.id, action="task.created", entity_type="task", actor="user"),
             ]
         )
         everyone.commit()
@@ -531,8 +531,8 @@ def test_deleting_a_user_cascades_their_trail_only(user, other_user):
     with SessionLocal() as everyone:
         everyone.add_all(
             [
-                ActivityLog(user_id=user.id, action="task.created", actor="user"),
-                ActivityLog(user_id=other_user.id, action="task.created", actor="user"),
+                ActivityLog(user_id=user.id, action="task.created", entity_type="task", actor="user"),
+                ActivityLog(user_id=other_user.id, action="task.created", entity_type="task", actor="user"),
             ]
         )
         everyone.commit()

@@ -5,7 +5,7 @@ services/workspace/activity_service.py, models/activity.py,
 api/v1/activity.py). Brand-new table, no existing data to backfill.
 
 Revision ID: 0009
-Revises: 0008
+Revises: 0008b
 """
 
 from typing import Sequence, Union
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0009"
-down_revision: Union[str, None] = "0008"
+down_revision: Union[str, None] = "0008b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

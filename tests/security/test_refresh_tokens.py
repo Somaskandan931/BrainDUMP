@@ -15,7 +15,7 @@ import pytest
 from backend.app.core import config
 from backend.app.db.database import SessionLocal
 from backend.app.models.refresh_token import RefreshToken
-from tests.helpers import TEST_PASSWORD, make_user
+from tests.helpers import TEST_PASSWORD, make_user, mark_verified
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +52,10 @@ def test_login_sets_an_httponly_refresh_cookie(anon_client):
 
 def test_refresh_mints_a_new_access_token_and_rotates_the_cookie(anon_client):
     _register(anon_client)
+    # The point here is cookie rotation, not the verification flow -- verify
+    # directly via the DB (login/refresh are blocked until verification; see
+    # PRODUCTION_READINESS.md).
+    mark_verified("refresh@example.com")
     old_cookie = anon_client.cookies.get(config.REFRESH_COOKIE_NAME)
 
     res = anon_client.post("/api/auth/refresh")
@@ -87,6 +91,7 @@ def test_reusing_an_already_rotated_refresh_token_revokes_the_whole_session(anon
     succeed, and it must burn every other live token for the user too --
     including the one the legitimate client just received."""
     _register(anon_client)
+    mark_verified("refresh@example.com")
     stolen_cookie = anon_client.cookies.get(config.REFRESH_COOKIE_NAME)
 
     # Legitimate client rotates forward.

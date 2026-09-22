@@ -25,8 +25,11 @@ from __future__ import annotations
 import math
 import threading
 import time
+import uuid
 from collections import deque
-from typing import Callable, Deque, Dict, Optional
+from typing import Callable, Deque, Dict, Optional, Union
+
+from backend.app.core import config
 
 # Hard cap on distinct tracked keys so a flood of unique emails/IPs can't grow
 # memory without bound; when hit, expired keys are dropped first, then oldest.
@@ -85,6 +88,94 @@ class SlidingWindowLimiter:
             self._prune(k, now)
         while len(self._events) >= _MAX_KEYS:
             self._events.pop(next(iter(self._events)))  # oldest-inserted
+
+
+_RATE_LIMIT_KEY_PREFIX = "ratelimit:"
+
+
+class RedisSlidingWindowLimiter:
+    """Same semantics as SlidingWindowLimiter, but backed by a Redis sorted
+    set per key so every API instance shares one view of `key`'s recent
+    events instead of each process counting its own. Used in place of
+    SlidingWindowLimiter when config.REDIS_URL is set and reachable -- see
+    get_limiter() below, which is what callers should actually use.
+
+    Each event is stored as a uniquely-named member scored by its wall-clock
+    timestamp; blocked_for()/hit() both prune anything older than the window
+    first (ZREMRANGEBYSCORE) so the set never grows unbounded, and hit() sets
+    a TTL slightly past the window so an idle key expires on its own instead
+    of lingering in Redis forever.
+    """
+
+    def __init__(self, max_events: int, window_seconds: float, redis_client) -> None:
+        self.max_events = max_events
+        self.window_seconds = window_seconds
+        self._client = redis_client
+
+    def _rkey(self, key: str) -> str:
+        return f"{_RATE_LIMIT_KEY_PREFIX}{key}"
+
+    def _prune(self, rkey: str, now: float) -> None:
+        cutoff = now - self.window_seconds
+        self._client.zremrangebyscore(rkey, 0, cutoff)
+
+    def blocked_for(self, key: str) -> Optional[int]:
+        rkey = self._rkey(key)
+        now = time.time()
+        self._prune(rkey, now)
+        if self._client.zcard(rkey) < self.max_events:
+            return None
+        oldest = self._client.zrange(rkey, 0, 0, withscores=True)
+        if not oldest:
+            return None
+        _, oldest_score = oldest[0]
+        return max(1, math.ceil(oldest_score + self.window_seconds - now))
+
+    def hit(self, key: str) -> None:
+        rkey = self._rkey(key)
+        now = time.time()
+        self._prune(rkey, now)
+        member = f"{now!r}:{uuid.uuid4().hex}"
+        self._client.zadd(rkey, {member: now})
+        ttl = max(1, min(120, math.ceil(self.window_seconds) + 60))
+        self._client.expire(rkey, ttl)
+
+    def reset(self, key: str) -> None:
+        self._client.delete(self._rkey(key))
+
+    def clear(self) -> None:
+        """Test-only: removes every key this limiter (or another sharing the
+        same Redis) has written, by prefix scan rather than FLUSHDB so it
+        never touches unrelated keys."""
+        cursor = 0
+        while True:
+            cursor, found = self._client.scan(cursor=cursor, match=f"{_RATE_LIMIT_KEY_PREFIX}*", count=200)
+            if found:
+                self._client.delete(*found)
+            if cursor == 0:
+                break
+
+
+def _get_redis_client():
+    from backend.app.core.redis_client import get_redis_client
+
+    return get_redis_client()
+
+
+def get_limiter(
+    max_events: int, window_seconds: float
+) -> Union["SlidingWindowLimiter", "RedisSlidingWindowLimiter"]:
+    """Returns a Redis-backed limiter when config.REDIS_URL is set and Redis
+    is actually reachable, otherwise the original in-memory limiter -- same
+    "no Redis configured, or Redis down => proceed on this process alone"
+    fallback as jobs/distributed_lock.py's job_lock(), so a Redis outage
+    degrades rate limiting to per-process instead of taking auth down.
+    """
+    if config.REDIS_URL:
+        client = _get_redis_client()
+        if client is not None:
+            return RedisSlidingWindowLimiter(max_events, window_seconds, redis_client=client)
+    return SlidingWindowLimiter(max_events, window_seconds)
 
 
 def retry_after_message(seconds: int) -> str:

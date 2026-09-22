@@ -73,6 +73,36 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     return claims
 
 
+
+def create_action_token(user_id: int, purpose: str, expires_minutes: int, **extra_claims: Any) -> str:
+    """Create a short-lived, purpose-scoped token for email actions.
+
+    These tokens are deliberately distinct from access tokens. A leaked
+    verification/reset URL cannot be presented as a bearer session.
+    """
+    now = datetime.now(timezone.utc)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "purpose": purpose,
+        "iat": int(now.timestamp()),
+        "exp": now + timedelta(minutes=expires_minutes),
+        **extra_claims,
+    }
+    return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm=config.JWT_ALGORITHM)
+
+
+def decode_action_token(token: str, purpose: str) -> dict[str, Any] | None:
+    """Return claims only when a short-lived action token has the expected purpose."""
+    try:
+        claims = jwt.decode(token, config.JWT_SECRET_KEY, algorithms=[config.JWT_ALGORITHM])
+    except JWTError:
+        return None
+    if claims.get("purpose") != purpose:
+        return None
+    if "sub" not in claims:
+        return None
+    return claims
+
 def create_state_token(user_id: int, purpose: str, expires_minutes: int = 10) -> str:
     """Short-lived, purpose-scoped signed token for round-tripping through a
     third party (the Google OAuth `state` parameter). Distinct from an

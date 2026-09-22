@@ -18,6 +18,8 @@ _SCRIPT = textwrap.dedent(
     import json
     from fastapi.testclient import TestClient
     from sqlalchemy import inspect
+    from backend.app.auth.security import create_action_token
+    from backend.app.core import config
     from backend.app.db import migrate
     from backend.app.main import app
     from backend.app.db.database import Base, engine
@@ -29,7 +31,17 @@ _SCRIPT = textwrap.dedent(
 
         reg = client.post("/api/auth/register", json={"email": "first@example.com", "password": "a-decent-password"})
         out["register"] = reg.status_code
+        user_id = reg.json()["user"]["id"]
         headers = {"Authorization": "Bearer " + reg.json()["access_token"]}
+
+        # Tenant-scoped API access is gated on verification (see
+        # PRODUCTION_READINESS.md); mint the same kind of token
+        # /verify-email/confirm expects rather than hitting real email.
+        out["create_task_before_verify"] = client.post(
+            "/api/tasks/", json={"title": "Too early"}, headers=headers
+        ).status_code
+        verify_token = create_action_token(user_id, "email_verification", config.EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES)
+        out["verify"] = client.post("/api/auth/verify-email/confirm", json={"token": verify_token}).status_code
 
         out["create_task"] = client.post("/api/tasks/", json={"title": "First task"}, headers=headers).status_code
         out["task_titles"] = [t["title"] for t in client.get("/api/tasks/", headers=headers).json()]
@@ -54,6 +66,8 @@ def test_empty_data_dir_boots_and_serves_the_first_user(tmp_path):
     assert result["stamped_head"] is True
     assert result["tables_missing"] == []
     assert result["register"] == 201
+    assert result["create_task_before_verify"] == 403
+    assert result["verify"] == 200
     assert result["create_task"] == 201 and result["task_titles"] == ["First task"]
     assert result["calendar_status"] == {"oauth_client_configured": False, "connected": False}
     assert result["anonymous_tasks"] == 401

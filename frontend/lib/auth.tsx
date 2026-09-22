@@ -15,7 +15,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name?: string) => Promise<void>;
+  register: (email: string, password: string, name?: string) => Promise<AuthUser>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginWithGithub: (code: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -49,10 +49,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
-  const register = useCallback(async (email: string, password: string, name?: string) => {
+  const register = useCallback(async (email: string, password: string, name?: string): Promise<AuthUser> => {
     const res = await authApi.register({ email, password, name });
-    setToken(res.access_token);
-    setUser(res.user);
+    if (res.user.is_verified === false) {
+      // Registration creates an unverified account. Do not leave a usable
+      // bearer token in localStorage while the user is waiting for email
+      // confirmation; the backend also rejects unverified sessions.
+      clearToken();
+      setUser(null);
+    } else {
+      setToken(res.access_token);
+      setUser(res.user);
+    }
+    return res.user;
   }, []);
 
   const loginWithGoogle = useCallback(async (idToken: string) => {

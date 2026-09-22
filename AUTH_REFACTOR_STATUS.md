@@ -2,6 +2,9 @@
 
 State of the multi-user refactor. Backend suite: **158 tests passing**
 (`python -m pytest`); frontend `tsc --noEmit` and `next lint` clean.
+*(That count is this document's own snapshot as of the auth refactor —
+the suite has grown since; see `PRODUCTION_READINESS.md` for the current
+total.)*
 
 ## What's in place
 

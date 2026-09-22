@@ -121,7 +121,10 @@ def google_callback(
             logger.warning("Google Calendar OAuth for user %d returned no refresh_token", user_id)
             return _back("error")
         integration_credentials_service.save_google_credentials_json(db, credentials_json)
-        log_activity(db, user_id=user_id, action="calendar.connected", entity_type="calendar")
+        log_activity(
+            db, user_id=user_id, action="calendar.connected", entity_type="calendar",
+            details={"provider": "google"},
+        )
         db.commit()
     except GoogleCalendarError as exc:
         logger.warning("Google Calendar OAuth callback failed for user %d: %s", user_id, exc)
@@ -140,11 +143,15 @@ def google_disconnect(db: Session = Depends(get_scoped_db)) -> None:
     the scheduler for a calendar Brain Dump can no longer see. Sessions
     Brain Dump itself created (source=BRAIN_DUMP) are untouched.
     """
-    integration_credentials_service.clear_google_credentials(db)
-    db.query(CalendarEvent).filter(CalendarEvent.source == EventSource.GOOGLE).delete(
+    had_credentials = integration_credentials_service.clear_google_credentials(db)
+    removed = db.query(CalendarEvent).filter(CalendarEvent.source == EventSource.GOOGLE).delete(
         synchronize_session=False
     )
-    log_activity(db, user_id=owner_id(db), action="calendar.disconnected", entity_type="calendar")
+    if had_credentials:
+        log_activity(
+            db, user_id=owner_id(db), action="calendar.disconnected", entity_type="calendar",
+            details={"provider": "google", "cached_events_removed": removed},
+        )
     db.commit()
 
 

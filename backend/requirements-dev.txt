@@ -1,3 +1,4 @@
 # Test/dev-only dependencies -- run `pip install -r backend/requirements.txt -r backend/requirements-dev.txt`
 pytest
 httpx
+fakeredis

@@ -5,7 +5,38 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fdb32dd7-77b9-4c57-97d4-f1a078b14750" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PRODUCTION_READINESS.md" beforeDir="false" afterPath="$PROJECT_DIR$/PRODUCTION_READINESS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/api/v1/activity.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/v1/activity.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/api/v1/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/v1/auth.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/api/v1/deps.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/v1/deps.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/api/v1/planner.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/v1/planner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/api/v1/projects.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/v1/projects.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/api/v1/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/v1/tasks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/auth/rate_limit.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/auth/rate_limit.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/auth/security.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/auth/security.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/core/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/models/user.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/models/user.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/schemas/activity.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/schemas/activity.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/schemas/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/schemas/auth.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/services/planning/deadline_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/services/planning/deadline_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/services/planning/schedule_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/services/planning/schedule_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/migrations/versions/0009_add_activity_log.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/migrations/versions/0009_add_activity_log.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/requirements-dev.txt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/requirements-dev.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/register/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/register/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/app/verify-email/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/app/verify-email/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/components/layout/RouteGuard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/layout/RouteGuard.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/components/tasks/TaskHistory.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/tasks/TaskHistory.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/lib/auth.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/auth.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/services/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/services/api.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/services/types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/services/types.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/integration/test_activity_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/integration/test_activity_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/integration/test_fresh_install.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/integration/test_fresh_install.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/security/test_auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/security/test_auth.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/unit/test_activity_log.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/unit/test_activity_log.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

@@ -553,6 +553,7 @@ export interface AuthUser {
   name?: string | null;
   google_picture_url?: string | null;
   github_avatar_url?: string | null;
+  is_verified?: boolean;
 }
 
 export interface AuthResponse {
@@ -575,5 +576,6 @@ export interface ActivityEntry {
 
 export interface ActivityFeedResponse {
   items: ActivityEntry[];
-  next_cursor: number | null;
+  next_before_id: number | null;
+  next_cursor?: number | null;
 }

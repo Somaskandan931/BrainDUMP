@@ -20,30 +20,14 @@ P1 is what breaks under real multi-instance load; P2 is future product work.
 
 ## P0 — done in this pass
 
-- **Email verification** — `users.is_verified` (migration `0008`),
-  `services/email_service.py` (SMTP if configured, logs the email
-  otherwise so local dev needs zero setup), `/api/auth/verify-email/{resend,confirm}`.
-  Gated behind `config.EMAIL_VERIFICATION_REQUIRED` (default off) so
-  turning it on is a deliberate production step, not a breaking default.
-- **Password reset** — `/api/auth/password-reset/{request,confirm}`,
-  same anti-enumeration shape as login (identical response whether or
-  not the email is registered). Reuses the existing purpose-scoped JWT
-  mechanism (`auth/security.py`'s `create_state_token` /
-  `decode_state_token`) instead of a new token table.
-- Frontend: `/forgot-password`, `/reset-password`, `/verify-email` pages;
-  a "Forgot password?" link and resend-verification affordance on `/login`.
-- 9 new backend tests (`tests/security/test_auth.py`); full suite is
-  170/170 green.
+- **Email verification** — `users.is_verified` (migration `0008b`), SMTP/local-dev email delivery in `services/email_service.py`, and `/api/auth/verify-email/confirm`. New password registrations are unverified by default; login, refresh, and tenant-scoped API access are blocked until verification. OAuth accounts remain verified because the provider has authenticated the email address.
+- **Password reset** — `/api/auth/password-reset/{request,confirm}` with an identical generic request response whether or not an address is registered. Reset tokens are short-lived purpose-scoped JWTs and are bound to the password hash that existed when they were issued, so changing the password invalidates replay of the same token. All refresh sessions are revoked after a successful reset.
+- **Frontend auth flow** — `/forgot-password`, `/reset-password`, and `/verify-email` are wired to the real endpoints; verification/reset routes are public and new registrations land on a pending-verification screen.
+- **Auth session model** — access JWTs are short-lived (`ACCESS_TOKEN_EXPIRE_MINUTES`, default 30 minutes) and refresh tokens are random, hashed server-side, rotated, reuse-detected, and held only in an HttpOnly cookie. `/logout` revokes the current refresh session.
 
-### Known limitation worth knowing about
+## Remaining auth hardening
 
-Reset/verification tokens are JWTs with an expiry (30 min / 24h) but are
-**not single-use** — nothing invalidates a token after it's been redeemed
-once, so a captured-but-unused link stays valid until it expires on its
-own. Fine for the current threat model (short expiry, HTTPS-only,
-one-time email delivery), but if this becomes a compliance requirement,
-the fix is a small `used_at` column or a Redis SETNX on the token's `jti`,
-not a redesign.
+- Verification links are idempotent rather than permanently storing a consumed-token record; a redeemed verification JWT can be presented again while it remains valid, but it has no further effect because the account is already verified. Password-reset tokens are invalidated by the password-version binding described above.
 
 ## P1 — done in this pass
 
@@ -128,9 +112,9 @@ not a redesign.
   - **Retention:** `ACTIVITY_LOG_RETENTION_DAYS` (default 180; 0 = keep
     everything); the nightly job prunes each user's old rows in its own
     transaction, so a purge failure can't undo a replan.
-  - **Frontend:** typed client only (`activityApi`, `tasksApi.history`,
-    `ActivityItem`/`DeadlineChangedDetails` in `services/types.ts`). There is
-    no UI for it yet — the "why did this move?" panel is the natural next piece.
+  - **Frontend:** typed client (`activityApi`, `tasksApi.history`) plus the
+    task-history UI in `components/tasks/TaskHistory.tsx`; deadline changes
+    render the recorded from/to values and actor.
   - **Known limits:** a replan repacks the whole schedule, and per-task rows
     for every repacked task every night would be N rows/user/night, so only
     *deadline* moves are per-task; the repack itself is one
@@ -138,18 +122,48 @@ not a redesign.
     demoted/at-risk task ids. A chat-triggered replan (`ai_coach_service`) is
     attributed to `user`, since the user asked for it.
   - 63 new tests (`tests/unit/test_activity_log.py`,
-    `tests/integration/test_activity_api.py`); full suite is 263/263 green.
+    `tests/integration/test_activity_api.py`); full suite is 274/274 green.
+
+## P0 — found and fixed in this pass
+
+- **Duplicate Alembic revision head** — `migrations/versions/0008_add_user_is_verified.py`
+  and `0008_add_refresh_tokens.py` both claimed revision id `0008` with
+  `down_revision = "0007"`; the correctly-renamed `0008b_add_user_is_verified.py`
+  (which chains onto `0008`, then `0009` onto `0008b`) was the one actually meant
+  to ship. The stray duplicate broke schema stamping for nearly every test that
+  boots the app — deleting it took the suite from 115 passed / 145 errors to
+  264 passed / 10 failed in one change. The four dead Todoist files (already
+  unregistered, see "Removed (dead code)" above) were also still present in the
+  tree and have now actually been deleted, not just documented as removed.
+- **`deadline_service.demote_task` crashed on any at-risk task** —
+  `task.deadline` comes back from SQLite timezone-naive; comparing it directly
+  against `datetime.now(timezone.utc)` raised `TypeError`. This broke the
+  nightly replan job for every task with a deadline. Fixed using the existing
+  `utils/timeutil.ensure_utc()` helper (the same normalization
+  `explanation_service.py` and `scheduler_service.py` already use elsewhere) —
+  both for the comparison and for the `task.deadline_changed` audit row's
+  `from` timestamp.
+- **`api/v1/tasks.py`'s deadline diff omitted the UTC offset** on the "from"
+  side of `task.updated` audit rows (SQLite hands the pre-update value back
+  naive; the "to" side is already tz-aware since it came straight off the
+  request). Same `ensure_utc()` fix.
+- **`GET/DELETE /api/calendar/google` double-logged `calendar.disconnected`**
+  on a second, no-op disconnect call, and never recorded `calendar.connected`'s
+  `details`. Disconnect now only logs when there was something to disconnect
+  (and records how many cached events it dropped); connect now records
+  `{"provider": "google"}` to match what the rest of the audit trail does for
+  every other integration action.
+- **`schemas/activity.py`'s `ActivityEntryOut.created_at` wasn't going through
+  `utc_iso()`** like every other `*Read` schema with a datetime field, so
+  activity-log timestamps came back without a UTC offset. Added the same
+  `@field_serializer` the rest of the API already uses.
+
+Full suite after this pass: **274/274 green** (up from 115/260 before the
+migration fix).
 
 ## P0 — still open
 
-- **Production auth cookie/session model** — the JWT still travels in
-  `localStorage` (`frontend/services/api.ts`), not an HttpOnly cookie.
-  Fine for a single-domain deployment, but XSS-exposed either way; moving
-  to HttpOnly + SameSite is a frontend + CORS-config change, not done here.
-- **Short-lived access tokens + refresh rotation** — `JWT_EXPIRE_MINUTES`
-  defaults to 7 days with no refresh/revocation path. Lower priority than
-  it looks: there's no session list or "log out everywhere" UI yet either,
-  so refresh rotation without that is partial credit.
+No original P0 auth item remains open from the 22-point SaaS plan. The remaining P0 work is operational hardening around production deployment: ensure strong non-dev secrets are supplied, use HTTPS, and point production instances at PostgreSQL/Redis rather than the SQLite/in-memory development fallbacks.
 
 ## P1 — still open
 
@@ -159,11 +173,12 @@ not a redesign.
   already seed/reset a workspace for the current authenticated user; this
   covers the "let a recruiter click around" need without a separate
   public demo account. Not open.
-- **Metrics** (API/AI latency percentiles, queue depth, active-user
-  counts as a dashboard, not just log lines) — still open; the structured
-  request log above has the raw data a log-based metrics pipeline (or a
-  Prometheus middleware) could derive it from, but nothing aggregates it
-  yet.
+- **Metrics** — done, not open. `ENABLE_METRICS` (default on) wires
+  `prometheus_fastapi_instrumentator` in `main.py`, exposing
+  `GET /metrics` (latency/throughput histograms per route, in Prometheus's
+  own format) for anything that scrapes it. Active-user counts and queue
+  depth still aren't derived anywhere — that part is genuinely open if a
+  dashboard needs them.
 
 ## P2 — untouched (correctly deprioritized)
 

@@ -53,5 +53,12 @@ class User(Base, TimestampMixin):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Added by migration 0008b. True for accounts created before email
+    # verification existed (server_default) and for OAuth accounts (Google/
+    # GitHub already proved ownership of the address). New password-based
+    # registrations should set this False until the verification link is
+    # clicked -- see services/email_service.py.
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email!r}>"

@@ -36,7 +36,7 @@ def test_updating_a_task_logs_a_diff_of_only_the_changed_fields(client):
     update_entry = next(e for e in history if e["action"] == "task.updated")
     changes = update_entry["details"]["changes"]
     assert "title" in changes
-    assert changes["title"] == {"old": "Draft", "new": "Draft v2"}
+    assert changes["title"] == {"from": "Draft", "to": "Draft v2"}
     # estimated_hours was resubmitted unchanged -- not part of the diff.
     assert "estimated_hours" not in changes
 

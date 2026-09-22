@@ -58,6 +58,21 @@ JWT_ALGORITHM = "HS256"
 # with no explicit expiry. New code should use ACCESS_TOKEN_EXPIRE_MINUTES.
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
 
+# --- Email verification / password reset -------------------------------------
+# Password registrations are unverified until the confirmation link is used.
+# OAuth providers are treated as verified because the provider has already
+# authenticated ownership of the email address.
+EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").strip().lower() not in ("false", "0", "")
+EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES = int(os.getenv("EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES", "60"))
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").strip().lower() not in ("false", "0", "")
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "BrainDUMP")
+EMAIL_FROM_ADDRESS = os.getenv("EMAIL_FROM_ADDRESS", "no-reply@localhost")
+
 # --- Session model: short-lived access token + HttpOnly-cookie refresh token ---
 # Previously a single 7-day JWT was handed to the frontend and kept in
 # localStorage indefinitely -- readable by any script on the page (XSS) and,
@@ -140,6 +155,22 @@ ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").strip().lower() not in ("fa
 # How long a user's activity_log rows are kept before the nightly job
 # purges them (per user, not a global sweep). 0 keeps everything forever.
 ACTIVITY_LOG_RETENTION_DAYS = int(os.getenv("ACTIVITY_LOG_RETENTION_DAYS", "180"))
+
+# ---------------------------------------------------------------------------
+# Redis (optional; unlocks cross-instance rate limiting and job-lock
+# coordination -- see core/redis_client.py, auth/rate_limit.py's
+# RedisSlidingWindowLimiter, and jobs/distributed_lock.py's job_lock()).
+# Empty/unset means "no Redis" -- every Redis-dependent feature falls back
+# to its single-process behavior rather than failing.
+# ---------------------------------------------------------------------------
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+# ---------------------------------------------------------------------------
+# Sentry (optional; see core/sentry.py's init_sentry()). Empty SENTRY_DSN
+# means "no Sentry" -- a no-op, not an error.
+# ---------------------------------------------------------------------------
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
 
 # ---------------------------------------------------------------------------
 # Calendar (Milestone 6; per-user OAuth as of the multi-user auth refactor)

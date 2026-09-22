@@ -26,12 +26,26 @@ class GithubLoginRequest(BaseModel):
     code: str
 
 
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
 class UserOut(BaseModel):
     id: int
     email: str
     name: Optional[str] = None
     google_picture_url: Optional[str] = None
     github_avatar_url: Optional[str] = None
+    is_verified: bool = True
 
     model_config = {"from_attributes": True}
 

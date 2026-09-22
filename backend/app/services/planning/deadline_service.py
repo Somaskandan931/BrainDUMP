@@ -33,6 +33,7 @@ from backend.app.services.workspace.activity_service import log_activity
 from backend.app.models.session import WorkSession
 from backend.app.models.task import Task
 from backend.app.services.planning import scheduler_service
+from backend.app.utils.timeutil import ensure_utc
 
 
 def _active_tasks_with_deadline(db: Session) -> List[Task]:
@@ -115,18 +116,20 @@ def demote_task(db: Session, task: Task, push_days: int = 3, actor: str = "user"
     GET /api/tasks/{id}/history's "why did BrainDUMP move this task?".
     """
     if task.deadline is not None:
-        old_deadline = task.deadline
+        old_deadline = ensure_utc(task.deadline)
         was_overdue = old_deadline < datetime.now(timezone.utc)
         task.deadline = old_deadline + timedelta(days=push_days)
+        importance = task.importance.value if hasattr(task.importance, "value") else str(task.importance)
         log_activity(
-            db, user_id=owner_id(db), action="task.deadline_pushed", entity_type="task", entity_id=task.id,
+            db, user_id=owner_id(db), action="task.deadline_changed", entity_type="task", entity_id=task.id,
             actor=actor,
             details={
-                "reason": "at_risk_demotion",
+                "reason": "at_risk_demoted",
+                "importance": importance,
                 "was_overdue": was_overdue,
                 "push_days": push_days,
-                "old_deadline": old_deadline.isoformat(),
-                "new_deadline": task.deadline.isoformat(),
+                "from": old_deadline.isoformat(),
+                "to": task.deadline.isoformat(),
             },
         )
     return task

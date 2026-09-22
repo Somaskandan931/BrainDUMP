@@ -29,3 +29,8 @@ email-validator
 psycopg[binary]
 # GET /metrics (main.py) -- config.ENABLE_METRICS
 prometheus-fastapi-instrumentator
+# Redis client -- only used when REDIS_URL is set (core/redis_client.py);
+# harmless to install even when running single-instance without it.
+redis
+# Optional at runtime -- only imported if SENTRY_DSN is set (core/sentry.py).
+sentry-sdk

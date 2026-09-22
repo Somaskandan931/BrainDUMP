@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
+
+from backend.app.schemas._mixins import utc_iso
 
 
 class ActivityEntryOut(BaseModel):
@@ -19,7 +21,14 @@ class ActivityEntryOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_serializer("created_at")
+    def _serialize_created_at(self, dt: datetime) -> Optional[str]:
+        return utc_iso(dt)
+
 
 class ActivityFeedResponse(BaseModel):
     items: list[ActivityEntryOut]
+    # Canonical cursor name for the public API.
+    next_before_id: Optional[int] = None
+    # Backwards-compatible alias retained for existing clients.
     next_cursor: Optional[int] = None
